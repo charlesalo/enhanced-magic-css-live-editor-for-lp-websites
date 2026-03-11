@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>EnhancedMagicCSS</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { width: 220px; background: #0f1117; font-family: 'DM Sans', sans-serif; padding: 14px; }
+    .launcher { display: flex; flex-direction: column; gap: 10px; }
+    .launcher__brand { display: flex; align-items: center; gap: 8px; padding-bottom: 10px; border-bottom: 1px solid #2a3447; }
+    .launcher__logo { font-size: 18px; filter: drop-shadow(0 0 6px #4ade80); }
+    .launcher__title { font-size: 12px; font-weight: 600; color: #e2e8f0; letter-spacing: -0.01em; }
+    .launcher__subtitle { font-size: 10px; color: #475569; margin-top: 1px; }
+    .btn { width: 100%; padding: 9px 12px; border-radius: 6px; border: none; font-family: 'DM Sans', sans-serif; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.15s; display: flex; align-items: center; gap: 8px; }
+    .btn--primary { background: #4ade80; color: #0a1a0f; box-shadow: 0 0 14px rgba(74,222,128,0.25); }
+    .btn--primary:hover { background: #6ee7a0; transform: translateY(-1px); }
+    .btn--ghost { background: transparent; color: #94a3b8; border: 1px solid #2a3447; }
+    .btn--ghost:hover { background: #161b22; color: #e2e8f0; border-color: #3d4f6e; }
+    .btn--danger { background: transparent; color: #f87171; border: 1px solid #2a3447; }
+    .btn--danger:hover { background: #1a0f0f; border-color: #f87171; }
+    .status { font-size: 10px; color: #475569; text-align: center; padding: 4px 0 2px; }
+    .status--active { color: #4ade80; }
+  </style>
+</head>
+<body>
+  <div class="launcher">
+    <div class="launcher__brand">
+      <span class="launcher__logo">⚡</span>
+      <div>
+        <div class="launcher__title">EnhancedMagicCSS</div>
+        <div class="launcher__subtitle">Live CSS editor</div>
+      </div>
+    </div>
+    <button class="btn btn--primary" id="openBtn">✏️ Open Editor</button>
+    <button class="btn btn--ghost" id="toggleBtn">👁 Toggle Visibility</button>
+    <button class="btn btn--danger" id="clearPageBtn">✕ Remove Styles</button>
+    <div class="status" id="statusLine">Click "Open Editor" to start</div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
