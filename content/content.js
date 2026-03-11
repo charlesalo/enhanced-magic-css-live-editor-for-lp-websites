@@ -53,6 +53,7 @@
         <div class="emcss__toolbar-left">
           <button class="emcss__btn" id="emcss-format">Format</button>
           <button class="emcss__btn" id="emcss-copy">Copy</button>
+          <button class="emcss__btn emcss__btn--hover" id="emcss-hover" title="Hover mode: click any element to capture its selector">Hover</button>
         </div>
         <div class="emcss__toolbar-right">
           <label class="emcss__toggle">
@@ -75,6 +76,7 @@
       <div class="emcss__el-controls">
         <select class="emcss__el-select" id="emcss-template-select">
           <option value="">&#8212; Select Template &#8212;</option>
+          <option value="Masterpiece">Masterpiece</option>
           <option value="Producer">Producer</option>
           <option value="Visionary">Visionary</option>
         </select>
@@ -97,7 +99,7 @@
           <datalist id="emcss-tpl-list"></datalist>
           <input class="emcss__settings-input" type="text" id="emcss-cust-name" placeholder="Element name (e.g. Boxed Text)" />
           <input class="emcss__settings-input" type="text" id="emcss-cust-id"   placeholder="ID — optional (e.g. global-navbar)" />
-          <input class="emcss__settings-input" type="text" id="emcss-cust-cls"  placeholder="Class(es) — space-separated (e.g. image-section image-wrapper)" />
+          <input class="emcss__settings-input" type="text" id="emcss-cust-cls"  placeholder="Class(es): same element: redesign opening-with-search — parent>child: image-section > image-wrapper" />
           <button class="emcss__btn emcss__btn--apply" id="emcss-cust-add">Add Element</button>
         </div>
         <div class="emcss__settings-divider"></div>
@@ -149,7 +151,21 @@
           </div>
         </div>
       </div>
+      <div class="emcss__settings-divider"></div>
+      <div class="emcss__settings-section-label">Export to TEMPLATES</div>
+      <p class="emcss__danger-hint">Generates code for all custom elements ready to paste into content.js.</p>
+      <button class="emcss__btn emcss__btn--apply" id="emcss-export-btn" style="width:100%">Generate Export Code</button>
+      <textarea class="emcss__settings-code emcss__export-output" id="emcss-export-out" readonly placeholder="Click Generate to produce code…" spellcheck="false"></textarea>
+      <button class="emcss__btn" id="emcss-export-copy" style="width:100%;margin-top:4px;display:none">Copy to Clipboard</button>
     </div>
+    <div class="emcss__rh emcss__rh--n"  data-dir="n"></div>
+    <div class="emcss__rh emcss__rh--s"  data-dir="s"></div>
+    <div class="emcss__rh emcss__rh--e"  data-dir="e"></div>
+    <div class="emcss__rh emcss__rh--w"  data-dir="w"></div>
+    <div class="emcss__rh emcss__rh--nw" data-dir="nw"></div>
+    <div class="emcss__rh emcss__rh--ne" data-dir="ne"></div>
+    <div class="emcss__rh emcss__rh--sw" data-dir="sw"></div>
+    <div class="emcss__rh emcss__rh--se" data-dir="se"></div>
   `;
 
   document.body.appendChild(widget);
@@ -195,7 +211,10 @@
   let undoStack    = [''];
   let redoStack    = [];
   let minimized    = false;
-  let lastSavedPos = null;
+  let lastSavedPos  = null;
+  let lastSavedSize = null;
+  let hoverMode    = false;
+  let hoverTarget  = null;
   const DEFAULT_MOODBOARD = 'Default Build';
   let buildMode    = false;
   let customEls    = [];
@@ -205,10 +224,11 @@
   let excldEls     = []; // excluded elements: [{template, name}]
 
   // ── Restore ───────────────────────────────────────────────────────────────
-  chrome.storage.local.get(['emcss_code', 'emcss_auto', 'emcss_pos', 'emcss_build_mode', 'emcss_custom_els', 'emcss_moodboards', 'emcss_excl_tpls', 'emcss_excl_els'], (data) => {
+  chrome.storage.local.get(['emcss_code', 'emcss_auto', 'emcss_pos', 'emcss_size', 'emcss_build_mode', 'emcss_custom_els', 'emcss_moodboards', 'emcss_excl_tpls', 'emcss_excl_els'], (data) => {
     if (data.emcss_code) { editor.value = data.emcss_code; undoStack = [data.emcss_code]; }
     if (typeof data.emcss_auto !== 'undefined') autoChk.checked = data.emcss_auto;
-    if (data.emcss_pos) { lastSavedPos = data.emcss_pos; }
+    if (data.emcss_pos)  { lastSavedPos  = data.emcss_pos; }
+    if (data.emcss_size) { lastSavedSize = data.emcss_size; widget.style.setProperty('width', data.emcss_size.w + 'px', 'important'); widget.style.setProperty('height', data.emcss_size.h + 'px', 'important'); }
     if (data.emcss_build_mode) {
       buildMode = true;
       buildModeChk.checked = true;
@@ -456,6 +476,52 @@
     chrome.storage.local.set({ emcss_pos: lastSavedPos });
   });
 
+  // ── Resizable ─────────────────────────────────────────────────────────────
+  const MIN_W = 320, MIN_H = 300;
+  let resizing = false, resizeDir = '';
+  let rsX = 0, rsY = 0, rsW = 0, rsH = 0, rsLeft = 0, rsTop = 0;
+
+  widget.querySelectorAll('.emcss__rh').forEach(handle => {
+    handle.addEventListener('mousedown', e => {
+      if (window.innerWidth <= 768) return;
+      e.preventDefault();
+      e.stopPropagation();
+      resizing   = true;
+      resizeDir  = handle.dataset.dir;
+      rsX        = e.clientX;
+      rsY        = e.clientY;
+      const rect = widget.getBoundingClientRect();
+      rsW = rect.width; rsH = rect.height;
+      rsLeft = rect.left; rsTop = rect.top;
+      widget.style.setProperty('right', 'auto', 'important');
+      widget.style.setProperty('left',  rsLeft + 'px', 'important');
+      widget.style.setProperty('top',   rsTop  + 'px', 'important');
+    });
+  });
+
+  document.addEventListener('mousemove', e => {
+    if (!resizing) return;
+    const dx = e.clientX - rsX, dy = e.clientY - rsY;
+    let w = rsW, h = rsH, left = rsLeft, top = rsTop;
+    if (resizeDir.includes('e')) w    = Math.max(MIN_W, rsW + dx);
+    if (resizeDir.includes('s')) h    = Math.max(MIN_H, rsH + dy);
+    if (resizeDir.includes('w')) { w  = Math.max(MIN_W, rsW - dx); left = rsLeft + rsW - w; }
+    if (resizeDir.includes('n')) { h  = Math.max(MIN_H, rsH - dy); top  = rsTop  + rsH - h; }
+    widget.style.setProperty('width',  w    + 'px', 'important');
+    widget.style.setProperty('height', h    + 'px', 'important');
+    widget.style.setProperty('left',   left + 'px', 'important');
+    widget.style.setProperty('top',    top  + 'px', 'important');
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!resizing) return;
+    resizing = false;
+    const rect = widget.getBoundingClientRect();
+    lastSavedSize = { w: rect.width, h: rect.height };
+    lastSavedPos  = { x: rect.left,  y: rect.top };
+    chrome.storage.local.set({ emcss_size: lastSavedSize, emcss_pos: lastSavedPos });
+  });
+
   // ── Close / Minimize ──────────────────────────────────────────────────────
   widget.querySelector('#emcss-close').addEventListener('click', e => {
     e.stopPropagation();
@@ -484,6 +550,90 @@
       btn.classList.add('emcss__btn--copied');
       setTimeout(() => { btn.textContent = orig; btn.classList.remove('emcss__btn--copied'); }, 2000);
     });
+  });
+
+  // ── Hover mode ────────────────────────────────────────────────────────────
+  const hoverBtn = widget.querySelector('#emcss-hover');
+
+  function generateSelector(el) {
+    const parts = [];
+    let node = el;
+    while (node && node !== document.body && node !== document.documentElement) {
+      if (node.id && !node.id.startsWith('__emcss')) {
+        parts.unshift('#' + node.id);
+        break; // ID is unique — stop walking up
+      }
+      const classes = Array.from(node.classList)
+        .filter(c => c && !c.startsWith('__emcss'));
+      // BEM class (contains __ element or -- modifier) is self-descriptive — use it and stop
+      const bemClass = classes.find(c => c.includes('__') || /(?<!^)--/.test(c));
+      if (bemClass) {
+        parts.unshift('.' + bemClass);
+        break;
+      }
+      if (classes.length) {
+        parts.unshift('.' + classes[0]);
+      } else {
+        parts.unshift(node.tagName.toLowerCase());
+      }
+      node = node.parentElement;
+      // Stop after capturing 3 meaningful levels
+      if (parts.length >= 3) break;
+    }
+    return parts.join(' ');
+  }
+
+  function hoverOnMouseOver(e) {
+    const el = e.target;
+    if (el.closest('#__emcss_widget__')) return;
+    if (hoverTarget && hoverTarget !== el) {
+      hoverTarget.classList.remove('__emcss_hover_highlight__');
+    }
+    hoverTarget = el;
+    el.classList.add('__emcss_hover_highlight__');
+  }
+
+  function hoverOnClick(e) {
+    const el = e.target;
+    if (el.closest('#__emcss_widget__')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const selector = generateSelector(el);
+    const block = selector + ' {\n  \n}';
+    const current = editor.value;
+    editor.value = current + (current.trim() ? '\n\n' : '') + block;
+    // Place cursor inside the braces
+    const pos = editor.value.lastIndexOf('\n  \n}') + 3;
+    editor.selectionStart = editor.selectionEnd = pos;
+    editor.focus();
+    afterEdit();
+    exitHoverMode();
+    // Switch to editor tab so the user sees the inserted rule
+    tabEditor.click();
+  }
+
+  function exitHoverMode() {
+    hoverMode = false;
+    hoverBtn.classList.remove('emcss__btn--hover-active');
+    document.body.style.cursor = '';
+    if (hoverTarget) {
+      hoverTarget.classList.remove('__emcss_hover_highlight__');
+      hoverTarget = null;
+    }
+    document.removeEventListener('mouseover', hoverOnMouseOver, true);
+    document.removeEventListener('click',     hoverOnClick,     true);
+  }
+
+  hoverBtn.addEventListener('click', () => {
+    if (hoverMode) {
+      exitHoverMode();
+    } else {
+      hoverMode = true;
+      hoverBtn.classList.add('emcss__btn--hover-active');
+      document.body.style.cursor = 'crosshair';
+      document.addEventListener('mouseover', hoverOnMouseOver, true);
+      document.addEventListener('click',     hoverOnClick,     true);
+    }
   });
 
   // ── Core functions ────────────────────────────────────────────────────────
@@ -1039,6 +1189,24 @@
 
   // depth: 0 = findBy element IS the section; 1 = parent of findBy is the section
   const TEMPLATES = {
+    'Masterpiece': [
+      { name: 'Homepage Opening with Search',   findBy: '.redesign.opening-with-search',               depth: 1, buildCode: '' },
+      { name: 'Homepage Opening - Full Bleed',  findBy: '.opening-with-search.parallax',               depth: 1, buildCode: '' },
+      { name: 'Stats Highlight',                findBy: '.company-stats',                             depth: 1, buildCode: '' },
+      { name: 'Featured Agent',                 findBy: '.lp-vertical-paddings:has(.col-1-2)',         depth: 1, buildCode: '' },
+      { name: 'Featured Team',                  findBy: '.featured-team',                              depth: 1, buildCode: '' },
+      { name: 'Featured Testimonials',          findBy: '.testimonials-section',                       depth: 1, buildCode: '' },
+      { name: 'Press Logo Carousel',            findBy: '.press-carousel-component',                   depth: 1, buildCode: '' },
+      { name: 'Gallery Style Menu',             findBy: '.gallery-component',                          depth: 1, buildCode: '' },
+      { name: 'Newsletter Sign Up',             findBy: '.newsletter-signup',                          depth: 1, buildCode: '' },
+      { name: 'Featured Properties',            findBy: '.featured-properties',                        depth: 1, buildCode: '' },
+      { name: 'Featured Neighborhoods',         findBy: '.featured-neighborhoods',                     depth: 1, buildCode: '' },
+      { name: 'Instant Home Valuation',         findBy: '.home-valuation',                             depth: 0, buildCode: '' },
+      { name: 'Featured Blogs',                 findBy: '.lp-vertical-paddings:has(.collection--3)',   depth: 1, buildCode: '' },
+      { name: 'Featured Video',                 findBy: '.section-video',                              depth: 1, buildCode: '' },
+      { name: 'Work With Us',                   findBy: '.work-with-us',                               depth: 1, buildCode: '' },
+      { name: 'Instagram Feed',                 findBy: '.jsIGContainer',                              depth: 3, buildCode: '' },
+    ],
     'Producer': [
       {
         name: 'Homepage Opening with Rotating Headlines',
@@ -1089,11 +1257,19 @@
   // Derive the querySelector selector from stored id / className fields
   function elFindBy(el) {
     if (el.id) return '#' + el.id.replace(/^#/, '');
-    const parts = el.className.trim().split(/\s+/).filter(Boolean)
+    const raw = el.className.trim();
+    if (!raw) return '';
+    // ">" separates parent from child: "image-section > image-wrapper" → ".image-section:has(.image-wrapper)"
+    // Space separates same-element classes: "redesign opening-with-search" → ".redesign.opening-with-search"
+    if (raw.includes('>')) {
+      const sides = raw.split('>').map(s => s.trim()).filter(Boolean)
+        .map(c => c.startsWith('.') ? c : '.' + c);
+      return sides[0] + sides.slice(1).map(c => ':has(' + c + ')').join('');
+    }
+    const parts = raw.split(/\s+/).filter(Boolean)
       .map(c => c.startsWith('.') ? c : '.' + c);
-    if (!parts.length) return '';
-    // First class targets the element; additional classes become :has() constraints
-    return parts[0] + parts.slice(1).map(c => ':has(' + c + ')').join('');
+    // Same-element multi-class: chain them (.class1.class2)
+    return parts.join('');
   }
 
   // Keep the template dropdown and datalist in sync with all known templates
@@ -1388,6 +1564,51 @@
     chrome.storage.local.set({ emcss_moodboards: moodboards });
     renderMoodboardList();
     syncDeleteDropdowns();
+  });
+
+  // ── Export ────────────────────────────────────────────────────────────────
+  const exportBtn     = widget.querySelector('#emcss-export-btn');
+  const exportOut     = widget.querySelector('#emcss-export-out');
+  const exportCopyBtn = widget.querySelector('#emcss-export-copy');
+
+  exportBtn.addEventListener('click', () => {
+    if (!customEls.length) {
+      exportOut.value = '// No custom elements to export.';
+      exportCopyBtn.style.display = 'none';
+      return;
+    }
+    // Group by template
+    const grouped = {};
+    customEls.forEach(el => {
+      if (!grouped[el.template]) grouped[el.template] = [];
+      grouped[el.template].push(el);
+    });
+    const lines = [];
+    Object.entries(grouped).forEach(([tpl, els]) => {
+      lines.push(`'${tpl}': [`);
+      els.forEach(el => {
+        let findBy;
+        if (el.id) {
+          findBy = '#' + el.id.replace(/^#/, '');
+        } else {
+          const parts = el.className.trim().split(/\s+/).filter(Boolean)
+            .map(c => c.startsWith('.') ? c : '.' + c);
+          findBy = parts[0] + parts.slice(1).map(c => ':has(' + c + ')').join('');
+        }
+        lines.push(`  { name: '${el.name}', findBy: '${findBy}', depth: 1, buildCode: '' },`);
+      });
+      lines.push(`],`);
+    });
+    exportOut.value = lines.join('\n');
+    exportCopyBtn.style.display = '';
+  });
+
+  exportCopyBtn.addEventListener('click', () => {
+    navigator.clipboard.writeText(exportOut.value).then(() => {
+      const orig = exportCopyBtn.textContent;
+      exportCopyBtn.textContent = 'Copied!';
+      setTimeout(() => { exportCopyBtn.textContent = orig; }, 2000);
+    });
   });
 
   settingsBtn.addEventListener('click', () => {

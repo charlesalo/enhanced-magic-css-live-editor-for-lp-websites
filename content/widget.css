@@ -19,7 +19,7 @@
   border-radius: 10px !important;
   box-shadow: 0 24px 64px rgba(0,0,0,0.6), 0 0 0 1px rgba(74,222,128,0.08) !important;
   overflow: hidden !important;
-  resize: both !important;
+  resize: none !important;
   min-width: 320px !important;
   min-height: 300px !important;
   color: #e2e8f0 !important;
@@ -254,6 +254,21 @@
 #__emcss_widget__ .emcss__btn--copied {
   color: #4ade80 !important;
   border-color: #4ade80 !important;
+}
+
+#__emcss_widget__ .emcss__btn--hover-active {
+  background: #4ade80 !important;
+  color: #0a1a0f !important;
+  font-weight: 600 !important;
+  border-color: #4ade80 !important;
+  box-shadow: 0 0 10px rgba(74,222,128,0.3) !important;
+}
+
+/* Hover mode element highlight (applied to page elements, not the widget) */
+.__emcss_hover_highlight__ {
+  outline: 2px solid #4ade80 !important;
+  outline-offset: 2px !important;
+  box-shadow: 0 0 0 4px rgba(74,222,128,0.15) !important;
 }
 
 /* Toggle */
@@ -981,6 +996,14 @@
   user-select: text !important;
 }
 
+#__emcss_widget__ .emcss__export-output {
+  min-height: 200px !important;
+  margin-top: 8px !important;
+  border: 1px solid #1e2a3a !important;
+  border-radius: 4px !important;
+  color: #4ade80 !important;
+}
+
 #__emcss_widget__ .emcss__cust-foot {
   display: flex !important;
   justify-content: flex-end !important;
@@ -1044,3 +1067,20 @@
 #emcss-autocomplete .emcss-ac__item--active strong {
   color: #a7f3d0 !important;
 }
+
+/* Resize handles */
+#__emcss_widget__ .emcss__rh {
+  position: absolute !important;
+  z-index: 10 !important;
+  background: transparent !important;
+}
+/* Edges */
+#__emcss_widget__ .emcss__rh--n  { top: 0 !important; left: 8px !important; right: 8px !important; height: 5px !important; cursor: n-resize !important; }
+#__emcss_widget__ .emcss__rh--s  { bottom: 0 !important; left: 8px !important; right: 8px !important; height: 5px !important; cursor: s-resize !important; }
+#__emcss_widget__ .emcss__rh--e  { right: 0 !important; top: 8px !important; bottom: 8px !important; width: 5px !important; cursor: e-resize !important; }
+#__emcss_widget__ .emcss__rh--w  { left: 0 !important; top: 8px !important; bottom: 8px !important; width: 5px !important; cursor: w-resize !important; }
+/* Corners */
+#__emcss_widget__ .emcss__rh--nw { top: 0 !important; left: 0 !important; width: 12px !important; height: 12px !important; cursor: nw-resize !important; }
+#__emcss_widget__ .emcss__rh--ne { top: 0 !important; right: 0 !important; width: 12px !important; height: 12px !important; cursor: ne-resize !important; }
+#__emcss_widget__ .emcss__rh--sw { bottom: 0 !important; left: 0 !important; width: 12px !important; height: 12px !important; cursor: sw-resize !important; }
+#__emcss_widget__ .emcss__rh--se { bottom: 0 !important; right: 0 !important; width: 12px !important; height: 12px !important; cursor: se-resize !important; }
