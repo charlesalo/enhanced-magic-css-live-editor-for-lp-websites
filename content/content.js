@@ -53,6 +53,7 @@
         <div class="emcss__toolbar-left">
           <button class="emcss__btn" id="emcss-format">Format</button>
           <button class="emcss__btn" id="emcss-copy">Copy</button>
+          <button class="emcss__btn emcss__btn--danger" id="emcss-clear">Clear</button>
           <button class="emcss__btn emcss__btn--hover" id="emcss-hover" title="Hover mode: click any element to capture its selector">Hover</button>
         </div>
         <div class="emcss__toolbar-right">
@@ -532,6 +533,15 @@
     e.stopPropagation();
     minimized = !minimized;
     widget.classList.toggle('emcss--minimized', minimized);
+    if (minimized) {
+      widget.style.setProperty('height', 'auto', 'important');
+    } else {
+      if (lastSavedSize) {
+        widget.style.setProperty('height', lastSavedSize.h + 'px', 'important');
+      } else {
+        widget.style.removeProperty('height');
+      }
+    }
   });
 
   // ── Toolbar ───────────────────────────────────────────────────────────────
@@ -550,6 +560,17 @@
       btn.classList.add('emcss__btn--copied');
       setTimeout(() => { btn.textContent = orig; btn.classList.remove('emcss__btn--copied'); }, 2000);
     });
+  });
+
+  widget.querySelector('#emcss-clear').addEventListener('click', () => {
+    if (!editor.value.trim()) return;
+    undoStack.push(editor.value);
+    redoStack = [];
+    editor.value = '';
+    save();
+    updateAll();
+    const existing = document.getElementById('__emcss_style__');
+    if (existing) existing.remove();
   });
 
   // ── Hover mode ────────────────────────────────────────────────────────────
@@ -583,6 +604,38 @@
     return parts.join(' ');
   }
 
+  // Pseudo-element badge
+  const pseudoBadge = document.createElement('div');
+  pseudoBadge.id = '__emcss_pseudo_badge__';
+  pseudoBadge.style.cssText = 'display:none;position:fixed;z-index:2147483646;pointer-events:none;';
+  document.body.appendChild(pseudoBadge);
+
+  function hasPseudo(el, pseudo) {
+    const cs = window.getComputedStyle(el, pseudo);
+    const content = cs.getPropertyValue('content');
+    // Empty string content (content: "") is valid and common — only exclude none/normal
+    return content !== 'none' && content !== 'normal';
+  }
+
+  function updatePseudoBadge(el) {
+    if (!el) { pseudoBadge.style.display = 'none'; return; }
+    const hasBefore = hasPseudo(el, '::before');
+    const hasAfter  = hasPseudo(el, '::after');
+    if (!hasBefore && !hasAfter) { pseudoBadge.style.display = 'none'; return; }
+    const rect = el.getBoundingClientRect();
+    const labels = [];
+    if (hasBefore) labels.push('::before');
+    if (hasAfter)  labels.push('::after');
+    pseudoBadge.textContent = labels.join('  ');
+    pseudoBadge.style.cssText = [
+      'display:block', 'position:fixed', 'z-index:2147483646', 'pointer-events:none',
+      'font:11px/1 monospace', 'background:rgba(74,222,128,0.15)', 'color:#4ade80',
+      'border:1px solid rgba(74,222,128,0.4)', 'border-radius:3px', 'padding:2px 6px',
+      'left:' + Math.round(rect.left) + 'px',
+      'top:'  + Math.round(rect.top - 22) + 'px',
+    ].join(';');
+  }
+
   function hoverOnMouseOver(e) {
     const el = e.target;
     if (el.closest('#__emcss_widget__')) return;
@@ -591,25 +644,120 @@
     }
     hoverTarget = el;
     el.classList.add('__emcss_hover_highlight__');
+    updatePseudoBadge(el);
   }
 
-  function hoverOnClick(e) {
-    const el = e.target;
-    if (el.closest('#__emcss_widget__')) return;
-    e.preventDefault();
-    e.stopPropagation();
-    const selector = generateSelector(el);
-    const block = selector + ' {\n  \n}';
+  // Insert a selector block into the editor
+  function insertSelectorBlock(selector) {
+    const block   = selector + ' {\n  \n}';
     const current = editor.value;
-    editor.value = current + (current.trim() ? '\n\n' : '') + block;
-    // Place cursor inside the braces
+    editor.value  = current + (current.trim() ? '\n\n' : '') + block;
     const pos = editor.value.lastIndexOf('\n  \n}') + 3;
     editor.selectionStart = editor.selectionEnd = pos;
     editor.focus();
     afterEdit();
     exitHoverMode();
-    // Switch to editor tab so the user sees the inserted rule
     tabEditor.click();
+  }
+
+  // Layer picker popup
+  let layerPicker = null;
+  function dismissLayerPicker() {
+    if (layerPicker) { layerPicker.remove(); layerPicker = null; }
+  }
+
+  function showLayerPicker(candidates, x, y) {
+    dismissLayerPicker();
+    layerPicker = document.createElement('div');
+    layerPicker.id = '__emcss_layer_picker__';
+    layerPicker.style.cssText = [
+      'position:fixed', 'z-index:2147483646',
+      'left:' + x + 'px', 'top:' + y + 'px',
+      'background:#1a2235', 'border:1px solid #2a3447',
+      'border-radius:6px', 'box-shadow:0 8px 24px rgba(0,0,0,0.5)',
+      'font:12px/1.5 monospace', 'color:#e2e8f0',
+      'min-width:200px', 'max-width:320px', 'overflow:hidden',
+    ].join(';');
+
+    const header = document.createElement('div');
+    header.textContent = 'Pick a layer:';
+    header.style.cssText = 'padding:6px 10px;font-size:10px;color:#64748b;border-bottom:1px solid #2a3447;font-family:sans-serif;';
+    layerPicker.appendChild(header);
+
+    candidates.forEach(({ el, pseudos }) => {
+      const sel = generateSelector(el);
+      const rows = [{ label: sel, pseudo: null }];
+      if (pseudos.before) rows.push({ label: sel + '::before', pseudo: '::before' });
+      if (pseudos.after)  rows.push({ label: sel + '::after',  pseudo: '::after'  });
+
+      rows.forEach(({ label }) => {
+        const row = document.createElement('div');
+        row.textContent = label;
+        row.style.cssText = 'padding:6px 10px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+        row.addEventListener('mouseenter', () => { row.style.background = '#2a3447'; });
+        row.addEventListener('mouseleave', () => { row.style.background = ''; });
+        row.addEventListener('mousedown', ev => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          dismissLayerPicker();
+          insertSelectorBlock(label);
+        });
+        layerPicker.appendChild(row);
+      });
+    });
+
+    document.body.appendChild(layerPicker);
+
+    // Flip up if too close to bottom
+    const ph = layerPicker.getBoundingClientRect().height;
+    if (y + ph > window.innerHeight - 10) {
+      layerPicker.style.top = Math.max(10, y - ph) + 'px';
+    }
+
+    // Dismiss on outside click
+    setTimeout(() => {
+      document.addEventListener('mousedown', dismissLayerPicker, { once: true, capture: true });
+    }, 0);
+  }
+
+  function hoverOnClick(e) {
+    if (e.target.closest('#__emcss_widget__') || e.target.closest('#__emcss_layer_picker__')) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    const layerMode = (e.altKey || e.metaKey) && e.shiftKey;
+
+    // Get all elements at this point, excluding widget internals
+    const stack = (document.elementsFromPoint(e.clientX, e.clientY) || [document.elementFromPoint(e.clientX, e.clientY)])
+      .filter(el => el && !el.closest('#__emcss_widget__') && !el.closest('#__emcss_layer_picker__') && el !== pseudoBadge && el !== document.documentElement && el !== document.body);
+
+    if (!stack.length) return;
+
+    const topEl  = stack[0];
+    const topSel = generateSelector(topEl);
+    const pseudoBefore = hasPseudo(topEl, '::before');
+    const pseudoAfter  = hasPseudo(topEl, '::after');
+    const hasPseudos   = pseudoBefore || pseudoAfter;
+
+    // Layer picker: Alt+Shift (Win) or Cmd+Shift (Mac) — shows all stacked elements
+    if (layerMode && stack.length > 1) {
+      const candidates = stack.map(el => ({
+        el,
+        pseudos: { before: hasPseudo(el, '::before'), after: hasPseudo(el, '::after') }
+      }));
+      showLayerPicker(candidates, e.clientX + 8, e.clientY + 8);
+      return;
+    }
+
+    // Pseudo picker: element has ::before or ::after — show options
+    if (hasPseudos) {
+      const candidates = [{ el: topEl, pseudos: { before: pseudoBefore, after: pseudoAfter } }];
+      showLayerPicker(candidates, e.clientX + 8, e.clientY + 8);
+      return;
+    }
+
+    // Simple case — just insert the selector
+    insertSelectorBlock(topSel);
   }
 
   function exitHoverMode() {
@@ -620,19 +768,38 @@
       hoverTarget.classList.remove('__emcss_hover_highlight__');
       hoverTarget = null;
     }
+    pseudoBadge.style.display = 'none';
+    dismissLayerPicker();
     document.removeEventListener('mouseover', hoverOnMouseOver, true);
     document.removeEventListener('click',     hoverOnClick,     true);
   }
 
+  function enterHoverMode() {
+    if (hoverMode) return;
+    hoverMode = true;
+    hoverBtn.classList.add('emcss__btn--hover-active');
+    document.body.style.cursor = 'crosshair';
+    document.addEventListener('mouseover', hoverOnMouseOver, true);
+    document.addEventListener('click',     hoverOnClick,     true);
+  }
+
   hoverBtn.addEventListener('click', () => {
-    if (hoverMode) {
+    if (hoverMode) exitHoverMode();
+    else           enterHoverMode();
+  });
+
+  // Hold Alt (Windows/Linux) or Command (Mac) to temporarily activate hover mode
+  let hoverKeyActive = false;
+  document.addEventListener('keydown', e => {
+    if ((e.key === 'Alt' || e.key === 'Meta') && !hoverMode) {
+      hoverKeyActive = true;
+      enterHoverMode();
+    }
+  });
+  document.addEventListener('keyup', e => {
+    if ((e.key === 'Alt' || e.key === 'Meta') && hoverKeyActive) {
+      hoverKeyActive = false;
       exitHoverMode();
-    } else {
-      hoverMode = true;
-      hoverBtn.classList.add('emcss__btn--hover-active');
-      document.body.style.cursor = 'crosshair';
-      document.addEventListener('mouseover', hoverOnMouseOver, true);
-      document.addEventListener('click',     hoverOnClick,     true);
     }
   });
 
@@ -683,11 +850,115 @@
   function formatCode() {
     const val = editor.value.trim();
     if (!val) return;
-    const { css, error } = compile(val);
-    if (error) { setStatus('Cannot format: ' + error, 'error'); return; }
-    editor.value = css;
-    afterEdit();
-    setStatus('Formatted \u2714', 'success');
+
+    // ── Parse flat CSS into rule objects ──────────────────────────────────
+    function parseRules(code) {
+      const rules = [];
+      let i = 0;
+      while (i < code.length) {
+        while (i < code.length && /\s/.test(code[i])) i++;
+        if (i >= code.length) break;
+        const braceStart = code.indexOf('{', i);
+        if (braceStart === -1) break;
+        const selector = code.slice(i, braceStart).trim();
+        let depth = 1, j = braceStart + 1;
+        while (j < code.length && depth > 0) {
+          if (code[j] === '{') depth++;
+          else if (code[j] === '}') depth--;
+          j++;
+        }
+        const body = code.slice(braceStart + 1, j - 1).trim();
+        if (selector) rules.push({ selector, body });
+        i = j;
+      }
+      return rules;
+    }
+
+    // ── Strip trailing pseudo-class/element from a selector ──────────────
+    function splitPseudo(selector) {
+      const m = selector.match(/^([\s\S]+?)(:{1,2}[a-zA-Z-]+(?:\([^)]*\))?)$/);
+      if (m) return { base: m[1].trim(), pseudo: m[2] };
+      return { base: selector.trim(), pseudo: null };
+    }
+
+    // ── Format declaration body into indented lines (handles nested blocks) ─
+    function fmtDecls(body, indent) {
+      const lines = [];
+      let i = 0, current = '';
+      while (i < body.length) {
+        const ch = body[i];
+        if (ch === '{') {
+          const sel = current.trim();
+          current = '';
+          let depth = 1, j = i + 1;
+          while (j < body.length && depth > 0) {
+            if (body[j] === '{') depth++;
+            else if (body[j] === '}') depth--;
+            j++;
+          }
+          const inner = body.slice(i + 1, j - 1).trim();
+          if (sel) {
+            lines.push(indent + sel + ' {');
+            fmtDecls(inner, indent + '  ').forEach(l => lines.push(l));
+            lines.push(indent + '}');
+          }
+          i = j;
+          while (i < body.length && /[;\s]/.test(body[i])) i++;
+          continue;
+        } else if (ch === ';') {
+          const d = current.trim();
+          if (d) lines.push(indent + d + ';');
+          current = '';
+        } else {
+          current += ch;
+        }
+        i++;
+      }
+      const rem = current.trim();
+      if (rem) lines.push(indent + rem);
+      return lines;
+    }
+
+    // ── Group rules and output nested SCSS ────────────────────────────────
+    function toSCSS(code) {
+      const rules = parseRules(code);
+      if (!rules.length) return code;
+
+      const groups = new Map();
+      const order  = [];
+      rules.forEach(({ selector, body }) => {
+        const { base, pseudo } = splitPseudo(selector);
+        if (!groups.has(base)) { groups.set(base, []); order.push(base); }
+        groups.get(base).push({ pseudo, body });
+      });
+
+      const out = [];
+      order.forEach(base => {
+        const entries = groups.get(base);
+        const direct  = entries.filter(e => !e.pseudo);
+        const pseudos = entries.filter(e =>  e.pseudo);
+
+        out.push(base + ' {');
+        direct.forEach(e => fmtDecls(e.body, '  ').forEach(l => out.push(l)));
+        pseudos.forEach(e => {
+          out.push('  &' + e.pseudo + ' {');
+          fmtDecls(e.body, '    ').forEach(l => out.push(l));
+          out.push('  }');
+        });
+        out.push('}');
+        out.push('');
+      });
+
+      return out.join('\n').trimEnd();
+    }
+
+    try {
+      editor.value = toSCSS(val);
+      afterEdit();
+      setStatus('Formatted \u2714', 'success');
+    } catch(e) {
+      setStatus('Cannot format: ' + e.message, 'error');
+    }
   }
 
   function undo() {
@@ -1001,6 +1272,10 @@
       return { mode: 'value', prop: vm[1].toLowerCase(), partial: vm[2] };
     }
 
+    // Pseudo mode — `&:partial` or `&::partial`
+    const xm = line.match(/(&:{1,2})([-a-zA-Z]*)$/);
+    if (xm) return { mode: 'pseudo', partial: xm[1] + xm[2] };
+
     // Property name mode — 2+ letters after whitespace / ; / {
     const pm = line.match(/(?:^|[\s;{])([a-zA-Z-]{2,})$/);
     if (pm) return { mode: 'prop', partial: pm[1] };
@@ -1034,6 +1309,10 @@
 
     if (ctx.mode === 'prop') {
       return CSS_PROPS.filter(p => p.startsWith(ctx.partial.toLowerCase())).slice(0, 12);
+    }
+
+    if (ctx.mode === 'pseudo') {
+      return CSS_PSEUDOS.filter(p => p.startsWith(ctx.partial)).slice(0, 15);
     }
 
     return [];
@@ -1114,7 +1393,7 @@
     const lineStart = val.lastIndexOf('\n', pos - 1) + 1;
     const line      = val.slice(lineStart, pos);
 
-    let replaceFrom, insert;
+    let replaceFrom, insert, cursorOffset = null;
     const replaceTo = pos;
 
     if (ctx.mode === 'important') {
@@ -1128,15 +1407,25 @@
     } else if (ctx.mode === 'value') {
       replaceFrom = pos - ctx.partial.length;
       insert = chosen;
+    } else if (ctx.mode === 'pseudo') {
+      const m = line.match(/(&:{1,2}[-a-zA-Z]*)$/);
+      replaceFrom = lineStart + line.length - (m ? m[1].length : 0);
+      const indent = line.match(/^(\s*)/)[1];
+      insert = chosen + ' {\n' + indent + '  \n' + indent + '}';
+      // Cursor lands on the blank inner line: after chosen + ' {\n' + indent + '  '
+      cursorOffset = chosen.length + 3 + indent.length + 2;
     } else { // prop
       const m = line.match(/([a-zA-Z-]{2,})$/);
       replaceFrom = lineStart + line.length - (m ? m[1].length : 0);
       insert = chosen + ': ';
     }
 
-    const hasParen = insert.endsWith('()');
-    acTarget.value = val.slice(0, replaceFrom) + insert + val.slice(replaceTo);
-    acTarget.selectionStart = acTarget.selectionEnd = replaceFrom + insert.length - (hasParen ? 1 : 0);
+    const hasParen  = insert.endsWith('()');
+    acTarget.value  = val.slice(0, replaceFrom) + insert + val.slice(replaceTo);
+    const cursorPos = cursorOffset !== null
+      ? replaceFrom + cursorOffset
+      : replaceFrom + insert.length - (hasParen ? 1 : 0);
+    acTarget.selectionStart = acTarget.selectionEnd = cursorPos;
     if (acTarget === editor) {
       afterEdit();
     } else {
@@ -1157,8 +1446,11 @@
 
   // ── Responsive layout ─────────────────────────────────────────────────────
   function applyResponsive() {
-    const mobile = window.innerWidth <= 768;
+    const w = window.innerWidth;
+    const mobile = w <= 768;
+    const tablet = w > 768 && w <= 1024;
     widget.classList.toggle('emcss--mobile', mobile);
+    widget.classList.toggle('emcss--tablet', tablet);
     if (mobile) {
       // Full-width bar anchored to bottom
       widget.style.setProperty('left',   '0',     'important');
@@ -1167,18 +1459,40 @@
       widget.style.setProperty('top',    'auto',  'important');
       widget.style.setProperty('width',  '100%',  'important');
     } else {
-      // Restore desktop position
+      // Restore desktop/tablet position
       widget.style.removeProperty('bottom');
       if (lastSavedPos) {
         widget.style.setProperty('left',  lastSavedPos.x + 'px', 'important');
         widget.style.setProperty('top',   lastSavedPos.y + 'px', 'important');
         widget.style.setProperty('right', 'auto', 'important');
-        widget.style.setProperty('width', '',     'important');
+        if (!lastSavedSize) {
+          widget.style.setProperty('width', tablet ? '360px' : '', 'important');
+        }
       } else {
-        widget.style.setProperty('right', '24px', 'important');
-        widget.style.setProperty('top',   '40px', 'important');
+        widget.style.setProperty('right', tablet ? '12px' : '24px', 'important');
+        widget.style.setProperty('top',   tablet ? '16px' : '40px', 'important');
         widget.style.setProperty('left',  'auto', 'important');
-        widget.style.setProperty('width', '',     'important');
+        if (!lastSavedSize) {
+          widget.style.setProperty('width', tablet ? '360px' : '', 'important');
+        }
+      }
+      // Clamp widget so it never overflows the viewport
+      const rect = widget.getBoundingClientRect();
+      if (rect.right > window.innerWidth) {
+        const clampedLeft = Math.max(0, window.innerWidth - rect.width - 8);
+        widget.style.setProperty('left',  clampedLeft + 'px', 'important');
+        widget.style.setProperty('right', 'auto', 'important');
+      }
+      if (rect.left < 0) {
+        widget.style.setProperty('left',  '8px', 'important');
+        widget.style.setProperty('right', 'auto', 'important');
+      }
+      // Clamp vertically too
+      if (rect.bottom > window.innerHeight) {
+        widget.style.setProperty('top', Math.max(0, window.innerHeight - rect.height - 8) + 'px', 'important');
+      }
+      if (rect.top < 0) {
+        widget.style.setProperty('top', '8px', 'important');
       }
     }
   }
@@ -1202,7 +1516,17 @@
       { name: 'Featured Properties',            findBy: '.featured-properties',                        depth: 1, buildCode: '' },
       { name: 'Featured Neighborhoods',         findBy: '.featured-neighborhoods',                     depth: 1, buildCode: '' },
       { name: 'Instant Home Valuation',         findBy: '.home-valuation',                             depth: 0, buildCode: '' },
-      { name: 'Featured Blogs',                 findBy: '.lp-vertical-paddings:has(.collection--3)',   depth: 1, buildCode: '' },
+      { name: 'Team Grid',                       findBy: '.lp-vertical-paddings:has(ul.data-container)',        depth: 1, buildCode: '' },
+      { name: 'Properties Grid',                 findBy: '.section:has(div.data-container)',                    depth: 1, buildCode: '' },
+      { name: 'MLS Properties Grid with Filters',findBy: '.properties-grid',                                    depth: 1, buildCode: '' },
+      { name: 'Featured Blogs',                 findBy: '.lp-vertical-paddings:has(.js-slick)',        depth: 1, buildCode: '' },
+      { name: 'Agent Bio',                       findBy: '.agent-detail-section',                       depth: 1, buildCode: '' },
+      { name: 'Property Description',            findBy: '.info.redesign',                              depth: 1, buildCode: '' },
+      { name: 'Property Intro',                  findBy: '.section:has(.holder)',                       depth: 1, buildCode: '' },
+      { name: 'Property Neighborhood',           findBy: '.section:has(.neighborhood-wrap)',            depth: 1, buildCode: '' },
+      { name: 'Property Agent',                  findBy: '.agent.lp-vertical-paddings',                 depth: 1, buildCode: '' },
+      { name: 'Features & Amenities',            findBy: '.section:has(.amenities-list-box)',           depth: 1, buildCode: '' },
+      { name: 'CTA Block',                       findBy: '.cta-block',                                  depth: 2, buildCode: '' },
       { name: 'Featured Video',                 findBy: '.section-video',                              depth: 1, buildCode: '' },
       { name: 'Work With Us',                   findBy: '.work-with-us',                               depth: 1, buildCode: '' },
       { name: 'Instagram Feed',                 findBy: '.jsIGContainer',                              depth: 3, buildCode: '' },
@@ -1228,6 +1552,9 @@
   tabEditor.addEventListener('click', () => {
     tabEditor.classList.add('emcss__tab--active');
     tabElements.classList.remove('emcss__tab--active');
+    settingsView.classList.add('emcss__view--hidden');
+    settingsBtn.classList.remove('emcss__btn-icon--active');
+    settingsOpen = false;
     editorView.classList.remove('emcss__view--hidden');
     elementsView.classList.add('emcss__view--hidden');
   });
@@ -1235,6 +1562,9 @@
   tabElements.addEventListener('click', () => {
     tabElements.classList.add('emcss__tab--active');
     tabEditor.classList.remove('emcss__tab--active');
+    settingsView.classList.add('emcss__view--hidden');
+    settingsBtn.classList.remove('emcss__btn-icon--active');
+    settingsOpen = false;
     elementsView.classList.remove('emcss__view--hidden');
     editorView.classList.add('emcss__view--hidden');
   });

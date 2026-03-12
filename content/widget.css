@@ -365,14 +365,14 @@
   background: transparent !important;
   border: none !important;
   border-bottom: 2px solid transparent !important;
-  color: #475569 !important;
+  color: #94a3b8 !important;
   cursor: pointer !important;
   transition: color 0.15s, border-color 0.15s !important;
   letter-spacing: 0.01em !important;
 }
 
 #__emcss_widget__ .emcss__tab:hover {
-  color: #94a3b8 !important;
+  color: #e2e8f0 !important;
 }
 
 #__emcss_widget__ .emcss__tab--active {
@@ -589,6 +589,61 @@
   padding: 6px 10px !important;
   background: #161b22 !important;
   border-top: 1px solid #2a3447 !important;
+}
+
+/* ── Small laptop / tablet landscape (≤1024px) ─────────────────────────── */
+@media (max-width: 1024px) {
+  #__emcss_widget__ {
+    min-width: 300px !important;
+  }
+
+  #__emcss_widget__ .emcss__header {
+    padding: 6px 10px !important;
+  }
+
+  #__emcss_widget__ .emcss__header-title {
+    font-size: 12px !important;
+  }
+
+  #__emcss_widget__ .emcss__tabbar {
+    padding: 0 8px !important;
+  }
+
+  #__emcss_widget__ .emcss__tab {
+    font-size: 11px !important;
+    padding: 5px 10px !important;
+  }
+
+  #__emcss_widget__ .emcss__toolbar {
+    padding: 5px 8px !important;
+    gap: 4px !important;
+  }
+
+  #__emcss_widget__ .emcss__toolbar-left,
+  #__emcss_widget__ .emcss__toolbar-right {
+    gap: 4px !important;
+  }
+
+  #__emcss_widget__ .emcss__btn {
+    font-size: 11px !important;
+    padding: 4px 8px !important;
+  }
+
+  #__emcss_widget__ .emcss__btn--apply {
+    padding: 4px 10px !important;
+  }
+
+  #__emcss_widget__ .emcss__editor {
+    font-size: 13px !important;
+  }
+
+  #__emcss_widget__ .emcss__view {
+    font-size: 12px !important;
+  }
+
+  #__emcss_widget__ .emcss__section-title {
+    font-size: 10px !important;
+  }
 }
 
 /* ── Mobile responsive (≤768px) ────────────────────────────────────────── */
