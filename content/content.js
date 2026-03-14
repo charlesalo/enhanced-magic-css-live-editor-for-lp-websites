@@ -2458,20 +2458,17 @@
     return { snippet, cursorOffset: offset };
   }
 
-  // Insert a rendered selector path at the current cursor in targetEditor.
+  // Insert a rendered selector path at the end of targetEditor, ignoring cursor position.
   // pseudo — '::before' / '::after' / null
   function insertSelectorPath(path, pseudo, targetEditor, syncFn) {
     const fullPath = pseudo ? [...path, '&' + pseudo] : path;
-    const start  = targetEditor.selectionStart;
-    const before = targetEditor.value.substring(0, start);
-    const after  = targetEditor.value.substring(targetEditor.selectionEnd);
-    const bi     = (before.slice(before.lastIndexOf('\n') + 1).match(/^(\s*)/) || ['', ''])[1];
-    const rendered = renderSelectorPath(fullPath, bi);
+    const before = targetEditor.value.trimEnd();
+    const rendered = renderSelectorPath(fullPath, '');
     if (!rendered) return;
     const { snippet, cursorOffset } = rendered;
-    const prefix = before.trim() ? '\n\n' : '';
-    targetEditor.value = before + prefix + snippet + (after.trim() ? '\n\n' + after : after);
-    targetEditor.selectionStart = targetEditor.selectionEnd = start + prefix.length + cursorOffset;
+    const prefix = before ? '\n\n' : '';
+    targetEditor.value = before + prefix + snippet;
+    targetEditor.selectionStart = targetEditor.selectionEnd = before.length + prefix.length + cursorOffset;
     targetEditor.focus();
     if (syncFn) syncFn();
   }
