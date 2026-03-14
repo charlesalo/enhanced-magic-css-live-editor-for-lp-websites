@@ -52,6 +52,10 @@
       <div class="emcss__toolbar">
         <div class="emcss__toolbar-left">
           <button class="emcss__btn" id="emcss-format">Format</button>
+          <select class="emcss__fmt-mode-sel" id="emcss-fmt-mode" title="Output format">
+            <option value="bem">BEM</option>
+            <option value="scss">SCSS</option>
+          </select>
           <button class="emcss__btn" id="emcss-copy">Copy</button>
           <button class="emcss__btn emcss__btn--danger" id="emcss-clear">Clear</button>
           <button class="emcss__btn emcss__btn--hover" id="emcss-hover" title="Hover mode: click any element to capture its selector">Hover</button>
@@ -212,6 +216,7 @@
   const delBldBtn    = widget.querySelector('#emcss-del-bld-btn');
 
   // ── State ─────────────────────────────────────────────────────────────────
+  let fmtMode      = 'bem'; // 'bem' | 'scss'
   let applyTimer   = null;
   let undoStack    = [''];
   let redoStack    = [];
@@ -230,11 +235,18 @@
   let excldEls     = []; // excluded elements: [{template, name}]
 
   // ── Restore ───────────────────────────────────────────────────────────────
-  chrome.storage.local.get(['emcss_code', 'emcss_auto', 'emcss_pos', 'emcss_size', 'emcss_build_mode', 'emcss_custom_els', 'emcss_moodboards', 'emcss_excl_tpls', 'emcss_excl_els', 'emcss_last_tpl', 'emcss_last_mood', 'emcss_last_tab'], (data) => {
+  const fmtModeSel = widget.querySelector('#emcss-fmt-mode');
+  fmtModeSel.addEventListener('change', () => {
+    fmtMode = fmtModeSel.value;
+    chrome.storage.local.set({ emcss_fmt_mode: fmtMode });
+  });
+
+  chrome.storage.local.get(['emcss_code', 'emcss_auto', 'emcss_pos', 'emcss_size', 'emcss_build_mode', 'emcss_custom_els', 'emcss_moodboards', 'emcss_excl_tpls', 'emcss_excl_els', 'emcss_last_tpl', 'emcss_last_mood', 'emcss_last_tab', 'emcss_fmt_mode'], (data) => {
     if (data.emcss_code) { editor.value = data.emcss_code; undoStack = [data.emcss_code]; }
     if (typeof data.emcss_auto !== 'undefined') autoChk.checked = data.emcss_auto;
     if (data.emcss_pos)  { lastSavedPos  = data.emcss_pos; }
     if (data.emcss_size) { lastSavedSize = data.emcss_size; widget.style.setProperty('width', data.emcss_size.w + 'px', 'important'); widget.style.setProperty('height', data.emcss_size.h + 'px', 'important'); }
+    if (data.emcss_fmt_mode) { fmtMode = data.emcss_fmt_mode; fmtModeSel.value = fmtMode; }
     if (data.emcss_build_mode) {
       buildMode = true;
       buildModeChk.checked = true;
@@ -742,6 +754,12 @@
     dismissLayerPicker();
     document.removeEventListener('mouseover', hoverOnMouseOver, true);
     document.removeEventListener('click',     hoverOnClick,     true);
+    // If triggered by a pick while Alt/Cmd was held, restore widget immediately
+    if (hoverKeyActive) {
+      hoverKeyActive = false;
+      widget.style.removeProperty('opacity');
+      widget.style.removeProperty('pointer-events');
+    }
   }
 
   function enterHoverMode() {
@@ -958,6 +976,28 @@
     return process(_cssTokenize(code));
   }
 
+  // SCSS formatter: same as formatCSS but skips BEM grouping — selectors are kept as-is.
+  function formatCSSScss(code) {
+    function process(tokens) {
+      const out = [];
+      tokens.forEach(tok => {
+        if (tok.type === 'comment') { out.push(tok.text); out.push(''); return; }
+        if (tok.type === 'at-rule') {
+          const inner = process(_cssTokenize(tok.body));
+          out.push(tok.selector + ' {');
+          if (inner) inner.split('\n').forEach(l => out.push(l ? '  ' + l : ''));
+          out.push('}'); out.push('');
+          return;
+        }
+        out.push(tok.selector + ' {');
+        _fmtBody(tok.body, '  ').forEach(l => out.push(l));
+        out.push('}'); out.push('');
+      });
+      return out.join('\n').trimEnd();
+    }
+    return process(_cssTokenize(code));
+  }
+
   // DOM-aware second pass: wrap sub-component blocks under the section's primary class
   // e.g. .gallery-card { } → .gallery-component { .gallery-card { } }
   // Parse a rule body into structured items: {type:'decl'|'block'|'comment', ...}
@@ -1158,7 +1198,7 @@
     const val = editor.value.trim();
     if (!val) return;
     try {
-      editor.value = formatCSS(val);
+      editor.value = fmtMode === 'scss' ? formatCSSScss(val) : formatCSS(val);
       afterEdit();
       setStatus('Formatted \u2714', 'success');
     } catch(e) {
@@ -2362,17 +2402,24 @@
       return false;
     });
 
-    // Build SCSS path with BEM & notation
+    // Build SCSS path — BEM mode uses & notation, SCSS mode keeps full class names
     const path = [];
     for (const { cls, isTag } of filtered) {
       if (!cls) continue;
       if (!isTag && cls.includes('__')) {
         const block  = cls.split('__')[0];
         const suffix = cls.slice(block.length);
-        if (path.length && path[path.length - 1] === '.' + block) {
-          path.push('&' + suffix);           // compress: previous was the block
+        if (fmtMode === 'scss') {
+          // SCSS mode: keep full class name, drop redundant block entry
+          if (path.length && path[path.length - 1] === '.' + block) path.pop();
+          path.push('.' + cls);
         } else {
-          path.push('.' + block, '&' + suffix); // block not in path yet — add both
+          // BEM mode: compress to & notation
+          if (path.length && path[path.length - 1] === '.' + block) {
+            path.push('&' + suffix);
+          } else {
+            path.push('.' + block, '&' + suffix);
+          }
         }
       } else {
         path.push(isTag ? cls : '.' + cls);

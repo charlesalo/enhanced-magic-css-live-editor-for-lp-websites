@@ -229,6 +229,25 @@
   line-height: 1.4 !important;
 }
 
+#__emcss_widget__ .emcss__fmt-mode-sel {
+  font-family: 'DM Sans', sans-serif !important;
+  font-size: 11.5px !important;
+  font-weight: 500 !important;
+  background: transparent !important;
+  border: 1px solid #2a3447 !important;
+  border-radius: 5px !important;
+  color: #94a3b8 !important;
+  padding: 5px 6px !important;
+  cursor: pointer !important;
+  outline: none !important;
+  line-height: 1.4 !important;
+}
+
+#__emcss_widget__ .emcss__fmt-mode-sel:hover {
+  border-color: #3d4f6b !important;
+  color: #e2e8f0 !important;
+}
+
 #__emcss_widget__ .emcss__btn:hover {
   background: #1c2230 !important;
   color: #e2e8f0 !important;
