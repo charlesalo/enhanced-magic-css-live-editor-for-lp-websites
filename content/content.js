@@ -79,20 +79,25 @@
 
     <div class="emcss__view emcss__view--hidden" id="emcss-elements-view">
       <div class="emcss__el-controls">
-        <select class="emcss__el-select" id="emcss-template-select">
-          <option value="">&#8212; Select Template &#8212;</option>
-          <option value="Masterpiece">Masterpiece</option>
-          <option value="Producer">Producer</option>
-          <option value="Visionary">Visionary</option>
-        </select>
-        <select class="emcss__el-select" id="emcss-global-moodboard" style="display:none">
-          <option value="Default Build">Default Build</option>
-        </select>
-        <label class="emcss__toggle emcss__build-toggle" title="Pre-fill editors with saved template code">
-          <input type="checkbox" id="emcss-build-mode" />
-          <span class="emcss__toggle-track"></span>
-          <span class="emcss__toggle-label">Build</span>
-        </label>
+        <div class="emcss__el-controls-selects">
+          <select class="emcss__el-select" id="emcss-template-select">
+            <option value="">&#8212; Select Template &#8212;</option>
+            <option value="Masterpiece">Masterpiece</option>
+            <option value="Producer">Producer</option>
+            <option value="Visionary">Visionary</option>
+          </select>
+          <select class="emcss__el-select" id="emcss-global-moodboard" style="display:none">
+            <option value="Default Build">Default Build</option>
+          </select>
+        </div>
+        <div class="emcss__el-controls-actions">
+          <button class="emcss__btn" id="emcss-global-css-btn" title="Copy saved global CSS for this template + moodboard">Global CSS</button>
+          <label class="emcss__toggle emcss__build-toggle" title="Pre-fill editors with saved template code">
+            <input type="checkbox" id="emcss-build-mode" />
+            <span class="emcss__toggle-track"></span>
+            <span class="emcss__toggle-label">Build</span>
+          </label>
+        </div>
       </div>
       <div class="emcss__el-list" id="emcss-el-list">
         <div class="emcss__el-empty">Select a template above to scan the page.</div>
@@ -160,11 +165,26 @@
         </div>
       </div>
       <div class="emcss__settings-divider"></div>
-      <div class="emcss__settings-section-label">Export to TEMPLATES</div>
-      <p class="emcss__danger-hint">Generates code for all custom elements ready to paste into content.js.</p>
-      <button class="emcss__btn emcss__btn--apply" id="emcss-export-btn" style="width:100%">Generate Export Code</button>
-      <textarea class="emcss__settings-code emcss__export-output" id="emcss-export-out" readonly placeholder="Click Generate to produce code…" spellcheck="false"></textarea>
-      <button class="emcss__btn" id="emcss-export-copy" style="width:100%;margin-top:4px;display:none">Copy to Clipboard</button>
+      <div class="emcss__settings-section-label">Global CSS Starters</div>
+      <p class="emcss__danger-hint">Save base CSS for a template + moodboard. Load it into the editor with the Starter bar.</p>
+      <div class="emcss__starter-edit-form">
+        <div class="emcss__starter-edit-row">
+          <select class="emcss__settings-input" id="emcss-starter-edit-tpl">
+            <option value="">&#8212; Template &#8212;</option>
+            <option value="Masterpiece">Masterpiece</option>
+            <option value="Producer">Producer</option>
+            <option value="Visionary">Visionary</option>
+          </select>
+          <select class="emcss__settings-input" id="emcss-starter-edit-mood">
+            <option value="Default Build">Default Build</option>
+          </select>
+        </div>
+        <textarea class="emcss__starter-code" id="emcss-starter-code" spellcheck="false" placeholder="Paste or write the global CSS for this template + moodboard combination..."></textarea>
+        <button class="emcss__btn emcss__btn--apply" id="emcss-starter-save" style="width:100%">Save Starter</button>
+      </div>
+      <div class="emcss__settings-divider"></div>
+      <div class="emcss__settings-section-label">Export</div>
+      <button class="emcss__btn emcss__btn--apply" id="emcss-export-btn" style="width:100%">Copy Elements JSON</button>
     </div>
     <div class="emcss__rh emcss__rh--n"  data-dir="n"></div>
     <div class="emcss__rh emcss__rh--s"  data-dir="s"></div>
@@ -214,6 +234,11 @@
   const delElBtn     = widget.querySelector('#emcss-del-el-btn');
   const delBldMoodSel = widget.querySelector('#emcss-del-bld-mood');
   const delBldBtn    = widget.querySelector('#emcss-del-bld-btn');
+  const globalCssBtn    = widget.querySelector('#emcss-global-css-btn');
+  const starterEditTplSel  = widget.querySelector('#emcss-starter-edit-tpl');
+  const starterEditMoodSel = widget.querySelector('#emcss-starter-edit-mood');
+  const starterCodeArea    = widget.querySelector('#emcss-starter-code');
+  const starterSaveBtn     = widget.querySelector('#emcss-starter-save');
 
   // ── State ─────────────────────────────────────────────────────────────────
   let fmtMode      = 'bem'; // 'bem' | 'scss'
@@ -243,7 +268,7 @@
 
   chrome.storage.local.get(['emcss_code', 'emcss_auto', 'emcss_pos', 'emcss_size', 'emcss_build_mode', 'emcss_custom_els', 'emcss_moodboards', 'emcss_excl_tpls', 'emcss_excl_els', 'emcss_last_tpl', 'emcss_last_mood', 'emcss_last_tab', 'emcss_fmt_mode'], (data) => {
     if (data.emcss_code) { editor.value = data.emcss_code; undoStack = [data.emcss_code]; }
-    if (typeof data.emcss_auto !== 'undefined') autoChk.checked = data.emcss_auto;
+    if (typeof data.emcss_auto !== 'undefined') { autoChk.checked = data.emcss_auto; syncApplyBtn(); }
     if (data.emcss_pos)  { lastSavedPos  = data.emcss_pos; }
     if (data.emcss_size) { lastSavedSize = data.emcss_size; widget.style.setProperty('width', data.emcss_size.w + 'px', 'important'); widget.style.setProperty('height', data.emcss_size.h + 'px', 'important'); }
     if (data.emcss_fmt_mode) { fmtMode = data.emcss_fmt_mode; fmtModeSel.value = fmtMode; }
@@ -268,6 +293,7 @@
       tmplSelect.value = data.emcss_last_tpl;
       renderElementList(scanPage(data.emcss_last_tpl), data.emcss_last_tpl);
     }
+    syncStarterMoodSels();
     if (data.emcss_last_mood) {
       syncGlobalMoodSel();
       const opt = globalMoodSel.querySelector(`option[value="${data.emcss_last_mood}"]`);
@@ -575,11 +601,17 @@
   });
 
   // ── Toolbar ───────────────────────────────────────────────────────────────
-  widget.querySelector('#emcss-apply').addEventListener('click', applyCSS);
+  const applyBtn = widget.querySelector('#emcss-apply');
+  applyBtn.addEventListener('click', applyCSS);
   widget.querySelector('#emcss-format').addEventListener('click', formatCode);
   widget.querySelector('#emcss-undo').addEventListener('click', undo);
   widget.querySelector('#emcss-redo').addEventListener('click', redo);
-  autoChk.addEventListener('change', save);
+
+  function syncApplyBtn() {
+    applyBtn.style.display = autoChk.checked ? 'none' : '';
+  }
+  autoChk.addEventListener('change', () => { save(); syncApplyBtn(); });
+  syncApplyBtn();
 
   widget.querySelector('#emcss-copy').addEventListener('click', () => {
     if (!editor.value.trim()) return;
@@ -599,8 +631,9 @@
     editor.value = '';
     save();
     updateAll();
-    const existing = document.getElementById('__emcss_style__');
+    const existing = document.getElementById('__emcss_injected__');
     if (existing) existing.remove();
+    setStatus('Styles removed', 'warning');
   });
 
   // ── Hover mode (Editor tab) ───────────────────────────────────────────────
@@ -690,8 +723,9 @@
 
     document.body.appendChild(layerPicker);
 
-    const ph = layerPicker.getBoundingClientRect().height;
-    if (y + ph > window.innerHeight - 10) layerPicker.style.top = Math.max(10, y - ph) + 'px';
+    const pr = layerPicker.getBoundingClientRect();
+    if (y + pr.height > window.innerHeight - 10) layerPicker.style.top  = Math.max(10, y - pr.height) + 'px';
+    if (x + pr.width  > window.innerWidth  - 10) layerPicker.style.left = Math.max(10, window.innerWidth - pr.width - 10) + 'px';
 
     setTimeout(() => {
       document.addEventListener('mousedown', dismissLayerPicker, { once: true, capture: true });
@@ -700,7 +734,7 @@
 
   function hoverOnMouseOver(e) {
     if (e.target.closest('#__emcss_widget__')) return;
-    const el = deepestElAtPoint(document.body, e.clientX, e.clientY) || e.target;
+    const el = bestElAtPoint(e.clientX, e.clientY) || e.target;
     if (!el || el.closest('#__emcss_widget__') || el === document.body || el === document.documentElement) return;
     if (hoverTarget && hoverTarget !== el) hoverTarget.classList.remove('__emcss_hover_highlight__');
     hoverTarget = el;
@@ -713,7 +747,7 @@
     e.preventDefault();
     e.stopPropagation();
 
-    const el = deepestElAtPoint(document.body, e.clientX, e.clientY) || e.target;
+    const el = bestElAtPoint(e.clientX, e.clientY) || e.target;
     if (!el || el.closest('#__emcss_widget__') || el === document.body || el === document.documentElement) return;
 
     const path = buildSelectorPath(el, null);
@@ -776,7 +810,7 @@
   // Hold Alt/Cmd to temporarily enter hover mode (hide widget while picking)
   let hoverKeyActive = false;
   document.addEventListener('keydown', e => {
-    if ((e.key === 'Alt' || e.key === 'Meta') && !hoverMode && !widget.contains(document.activeElement)) {
+    if ((e.key === 'Alt' || e.key === 'Meta') && !hoverMode && !widget.classList.contains('emcss--hidden') && !widget.contains(document.activeElement)) {
       hoverKeyActive = true;
       enterHoverMode();
       widget.style.setProperty('opacity', '0', 'important');
@@ -795,7 +829,7 @@
   // ── Core functions ────────────────────────────────────────────────────────
   function scheduleApply() {
     clearTimeout(applyTimer);
-    applyTimer = setTimeout(applyCSS, 600);
+    applyTimer = setTimeout(applyCSS, 300);
   }
 
   function save() {
@@ -915,24 +949,143 @@
     return { blockSel: '.' + blockName, childSel: '&' + cls.slice(blockName.length) + (tail ? tail : '') };
   }
 
-  // Standard BEM-aware formatter (no DOM context)
+  // Expand only &-prefixed nested selectors into flat top-level tokens.
+  // Non-& nested blocks (e.g. h1 { } inside .hero { }) stay nested in-place.
+  // e.g. .block { color:red; &__el { color:blue } } → two flat tokens.
+  function _expandBem(tokens) {
+    const flat = [];
+    function expand(selector, body) {
+      const items = _parseBody(body);
+      let decls = '';
+      const children = [];
+      for (const item of items) {
+        if (item.type === 'decl' || item.type === 'comment') {
+          decls += item.text + '\n';
+        } else if (item.type === 'block') {
+          if (item.selector.startsWith('&')) {
+            // & reference — expand to full selector at top level
+            children.push({ selector: item.selector.replace(/^&/, selector), body: item.body });
+          } else {
+            // Regular nested selector — keep it in the body as-is
+            decls += item.selector + ' {\n' + item.body + '\n}\n';
+          }
+        }
+      }
+      if (decls.trim()) flat.push({ type: 'rule', selector, body: decls.trim() });
+      for (const ch of children) expand(ch.selector, ch.body);
+    }
+    for (const tok of tokens) {
+      if (tok.type === 'comment' || tok.type === 'at-rule') { flat.push(tok); continue; }
+      expand(tok.selector, tok.body);
+    }
+    return flat;
+  }
+
+  // Merge tokens that share the same selector by concatenating their bodies.
+  function _mergeTokens(tokens) {
+    const merged = [];
+    const map = new Map();
+    for (const tok of tokens) {
+      if (tok.type === 'comment') { merged.push(tok); continue; }
+      if (map.has(tok.selector)) {
+        merged[map.get(tok.selector)].body += '\n' + tok.body;
+      } else {
+        map.set(tok.selector, merged.length);
+        merged.push({ ...tok });
+      }
+    }
+    return merged;
+  }
+
+  // Flatten BEM tokens: walk every rule body recursively and extract nested
+  // BEM-element rules (.block__el) as top-level siblings.
+  // Non-BEM nested selectors (p, h1, &:hover …) stay inside the parent body.
+  function _flattenBemTokens(tokens) {
+    const flat = [];
+    function extract(selector, body) {
+      const items = _parseBody(body);
+      let decls = '';
+      for (const item of items) {
+        if (item.type === 'decl' || item.type === 'comment') {
+          decls += item.text + '\n';
+        } else if (item.type === 'block') {
+          if (item.selector.match(/^\.[a-zA-Z][\w-]*__[\w-]/)) {
+            extract(item.selector, item.body); // BEM element → hoist to top
+          } else {
+            decls += item.selector + ' {\n' + item.body + '\n}\n'; // keep nested
+          }
+        }
+      }
+      flat.push({ type: 'rule', selector, body: decls.trim() });
+    }
+    for (const tok of tokens) {
+      if (tok.type === 'comment' || tok.type === 'at-rule') { flat.push(tok); continue; }
+      extract(tok.selector, tok.body);
+    }
+    return flat;
+  }
+
+  // Render a rule body, merging duplicate child selectors (e.g. two `p {}` blocks).
+  function _renderBody(body, indent) {
+    const items = _parseBody(body);
+    const declLines = [];
+    const childMap  = new Map();
+    const childOrder = [];
+    for (const item of items) {
+      if (item.type === 'decl' || item.type === 'comment') {
+        declLines.push(indent + item.text);
+      } else if (item.type === 'block') {
+        if (childMap.has(item.selector)) { childMap.get(item.selector).push(item.body); }
+        else { childMap.set(item.selector, [item.body]); childOrder.push(item.selector); }
+      }
+    }
+    const lines = [...declLines];
+    for (const key of childOrder) {
+      const merged = childMap.get(key).join('\n');
+      lines.push(indent + key + ' {');
+      _renderBody(merged, indent + '  ').forEach(l => lines.push(l));
+      lines.push(indent + '}');
+    }
+    return lines;
+  }
+
+  // BEM-aware formatter: flattens nested BEM elements, merges duplicates,
+  // groups all .block__element rules under .block, drops empty blocks.
   function formatCSS(code) {
     function process(tokens) {
       const out = [];
       let pendingComments = [];
-      let bemGroup = null;
+      let bemGroup    = null;
+      let pendingBlock = null;
+
+      function flushPendingBlock() {
+        if (!pendingBlock) return;
+        if (pendingBlock.body.trim()) {
+          out.push(pendingBlock.selector + ' {');
+          _renderBody(pendingBlock.body, '  ').forEach(l => out.push(l));
+          out.push('}'); out.push('');
+        }
+        pendingBlock = null;
+      }
 
       function flushBem() {
         if (!bemGroup) return;
-        bemGroup.leadComments.forEach(c => out.push(c));
-        out.push(bemGroup.blockSel + ' {');
-        bemGroup.entries.forEach(({ childSel, body }) => {
-          out.push('  ' + childSel + ' {');
-          _fmtBody(body, '    ').forEach(l => out.push(l));
-          out.push('  }');
-        });
-        out.push('}');
-        out.push('');
+        const hasContent = bemGroup.declarations.trim() ||
+          bemGroup.entries.some(({ body }) => body.trim());
+        if (hasContent) {
+          bemGroup.leadComments.forEach(c => out.push(c));
+          out.push(bemGroup.blockSel + ' {');
+          if (bemGroup.declarations.trim()) {
+            _renderBody(bemGroup.declarations, '  ').forEach(l => out.push(l));
+          }
+          bemGroup.entries.forEach(({ childSel, body }) => {
+            if (!body.trim()) return; // skip empty blocks
+            out.push('  ' + childSel + ' {');
+            _renderBody(body, '    ').forEach(l => out.push(l));
+            out.push('  }');
+          });
+          out.push('}'); out.push('');
+        }
         bemGroup = null;
       }
 
@@ -942,10 +1095,14 @@
         pendingComments = [];
       }
 
-      tokens.forEach(tok => {
-        if (tok.type === 'comment') { flushBem(); pendingComments.push(tok.text); return; }
+      _mergeTokens(_flattenBemTokens(tokens)).forEach(tok => {
+        if (tok.type === 'comment') {
+          flushBem(); flushPendingBlock();
+          pendingComments.push(tok.text);
+          return;
+        }
         if (tok.type === 'at-rule') {
-          flushBem(); emitComments();
+          flushBem(); flushPendingBlock(); emitComments();
           const inner = process(_cssTokenize(tok.body));
           out.push(tok.selector + ' {');
           if (inner) inner.split('\n').forEach(l => out.push(l ? '  ' + l : ''));
@@ -958,29 +1115,36 @@
             bemGroup.entries.push({ childSel: bem.childSel, body: tok.body });
           } else {
             flushBem();
-            bemGroup = { blockSel: bem.blockSel, leadComments: pendingComments, entries: [{ childSel: bem.childSel, body: tok.body }] };
+            // Absorb preceding standalone block if it matches this BEM block
+            let declarations = '';
+            if (pendingBlock && pendingBlock.selector === bem.blockSel) {
+              declarations = pendingBlock.body;
+              pendingBlock = null;
+            } else {
+              flushPendingBlock();
+            }
+            bemGroup = { blockSel: bem.blockSel, leadComments: pendingComments, declarations, entries: [{ childSel: bem.childSel, body: tok.body }] };
             pendingComments = [];
           }
         } else {
           flushBem(); emitComments();
-          out.push(tok.selector + ' {');
-          _fmtBody(tok.body, '  ').forEach(l => out.push(l));
-          out.push('}'); out.push('');
+          pendingBlock = { selector: tok.selector, body: tok.body };
         }
       });
 
       flushBem();
+      flushPendingBlock();
       pendingComments.forEach(c => out.push(c));
       return out.join('\n').trimEnd();
     }
     return process(_cssTokenize(code));
   }
 
-  // SCSS formatter: same as formatCSS but skips BEM grouping — selectors are kept as-is.
+  // SCSS formatter: expands BEM nesting, merges duplicate selectors, outputs flat.
   function formatCSSScss(code) {
     function process(tokens) {
       const out = [];
-      tokens.forEach(tok => {
+      _mergeTokens(_expandBem(tokens)).forEach(tok => {
         if (tok.type === 'comment') { out.push(tok.text); out.push(''); return; }
         if (tok.type === 'at-rule') {
           const inner = process(_cssTokenize(tok.body));
@@ -1704,15 +1868,18 @@
       widget.style.setProperty('top',    'auto',  'important');
       widget.style.setProperty('width',  '100%',  'important');
     } else {
-      // Restore desktop/tablet position
+      // Restore desktop/tablet position — clear all mobile-forced styles first
       widget.style.removeProperty('bottom');
+      widget.style.removeProperty('right');
+      widget.style.removeProperty('width');
+      if (lastSavedSize) {
+        widget.style.setProperty('width',  lastSavedSize.w + 'px', 'important');
+        widget.style.setProperty('height', lastSavedSize.h + 'px', 'important');
+      }
       if (lastSavedPos) {
         widget.style.setProperty('left',  lastSavedPos.x + 'px', 'important');
         widget.style.setProperty('top',   lastSavedPos.y + 'px', 'important');
         widget.style.setProperty('right', 'auto', 'important');
-        if (!lastSavedSize) {
-          widget.style.setProperty('width', tablet ? '360px' : '', 'important');
-        }
       } else {
         widget.style.setProperty('right', tablet ? '12px' : '24px', 'important');
         widget.style.setProperty('top',   tablet ? '16px' : '40px', 'important');
@@ -1940,6 +2107,62 @@
     if (all.includes(prev)) globalMoodSel.value = prev;
   }
 
+  // Keep both starter moodboard dropdowns (Editor bar + Settings form) in sync
+  function syncStarterMoodSels() {
+    const all = [DEFAULT_MOODBOARD, ...moodboards];
+    const opts = all.map(m => `<option value="${m}">${m}</option>`).join('');
+    const prevEdit    = starterEditMoodSel.value;
+    starterEditMoodSel.innerHTML = opts;
+    if (all.includes(prevEdit)) starterEditMoodSel.value = prevEdit;
+  }
+
+  function starterKey(tpl, mood) {
+    return 'emcss_global_' + tpl + '_' + mood.replace(/\s+/g, '_');
+  }
+
+  function loadStarterIntoSettings() {
+    const tpl  = starterEditTplSel.value;
+    const mood = starterEditMoodSel.value;
+    if (!tpl || !mood) { starterCodeArea.value = ''; return; }
+    chrome.storage.local.get([starterKey(tpl, mood)], data => {
+      starterCodeArea.value = data[starterKey(tpl, mood)] || '';
+    });
+  }
+
+  starterEditTplSel.addEventListener('change',  loadStarterIntoSettings);
+  starterEditMoodSel.addEventListener('change', loadStarterIntoSettings);
+
+  starterSaveBtn.addEventListener('click', () => {
+    const tpl  = starterEditTplSel.value;
+    const mood = starterEditMoodSel.value;
+    if (!tpl || !mood) return;
+    chrome.storage.local.set({ [starterKey(tpl, mood)]: starterCodeArea.value.trim() });
+    const orig = starterSaveBtn.textContent;
+    starterSaveBtn.textContent = 'Saved ✔';
+    setTimeout(() => { starterSaveBtn.textContent = orig; }, 2000);
+  });
+
+  // ── Global CSS copy button (Elements tab) ────────────────────────────────
+  globalCssBtn.addEventListener('click', () => {
+    const tpl  = tmplSelect.value;
+    const mood = globalMoodSel.value || DEFAULT_MOODBOARD;
+    if (!tpl) { return; }
+    chrome.storage.local.get([starterKey(tpl, mood)], data => {
+      const code = data[starterKey(tpl, mood)] || '';
+      if (!code) {
+        const orig = globalCssBtn.textContent;
+        globalCssBtn.textContent = 'None saved';
+        setTimeout(() => { globalCssBtn.textContent = orig; }, 2000);
+        return;
+      }
+      navigator.clipboard.writeText(code).then(() => {
+        const orig = globalCssBtn.textContent;
+        globalCssBtn.textContent = 'Copied!';
+        setTimeout(() => { globalCssBtn.textContent = orig; }, 2000);
+      });
+    });
+  });
+
   function renderMoodboardList() {
     moodListEl.innerHTML = '';
     if (!moodboards.length) {
@@ -1953,6 +2176,7 @@
       });
     }
     syncGlobalMoodSel();
+    syncStarterMoodSels();
     syncDeleteDropdowns();
   }
 
@@ -2175,47 +2399,14 @@
   });
 
   // ── Export ────────────────────────────────────────────────────────────────
-  const exportBtn     = widget.querySelector('#emcss-export-btn');
-  const exportOut     = widget.querySelector('#emcss-export-out');
-  const exportCopyBtn = widget.querySelector('#emcss-export-copy');
+  const exportBtn = widget.querySelector('#emcss-export-btn');
 
   exportBtn.addEventListener('click', () => {
-    if (!customEls.length) {
-      exportOut.value = '// No custom elements to export.';
-      exportCopyBtn.style.display = 'none';
-      return;
-    }
-    // Group by template
-    const grouped = {};
-    customEls.forEach(el => {
-      if (!grouped[el.template]) grouped[el.template] = [];
-      grouped[el.template].push(el);
-    });
-    const lines = [];
-    Object.entries(grouped).forEach(([tpl, els]) => {
-      lines.push(`'${tpl}': [`);
-      els.forEach(el => {
-        let findBy;
-        if (el.id) {
-          findBy = '#' + el.id.replace(/^#/, '');
-        } else {
-          const parts = el.className.trim().split(/\s+/).filter(Boolean)
-            .map(c => c.startsWith('.') ? c : '.' + c);
-          findBy = parts[0] + parts.slice(1).map(c => ':has(' + c + ')').join('');
-        }
-        lines.push(`  { name: '${el.name}', findBy: '${findBy}', depth: 1, buildCode: '' },`);
-      });
-      lines.push(`],`);
-    });
-    exportOut.value = lines.join('\n');
-    exportCopyBtn.style.display = '';
-  });
-
-  exportCopyBtn.addEventListener('click', () => {
-    navigator.clipboard.writeText(exportOut.value).then(() => {
-      const orig = exportCopyBtn.textContent;
-      exportCopyBtn.textContent = 'Copied!';
-      setTimeout(() => { exportCopyBtn.textContent = orig; }, 2000);
+    const json = JSON.stringify(customEls, null, 2);
+    navigator.clipboard.writeText(json).then(() => {
+      const orig = exportBtn.textContent;
+      exportBtn.textContent = 'Copied!';
+      setTimeout(() => { exportBtn.textContent = orig; }, 2000);
     });
   });
 
@@ -2339,13 +2530,67 @@
     return best;
   }
 
-  const HSKIP = /^(js-|is-|has-|slick-|aos-|animated|active|open|closed|visible|hidden|show|hide|fade|collapse|loading|loaded|emcss|__emcss)/;
+  // Z-index-aware hit test: uses browser's elementFromPoint (respects stacking/z-index)
+  // but falls back to geometric walk when the result is a pointer-events:none subtree
+  // (e.g. portfolio .item__text). If the geometric result is a descendant of the
+  // elementFromPoint result, the user is hovering over a pointer-events:none child — use it.
+  function bestElAtPoint(x, y) {
+    const fromPoint = document.elementFromPoint(x, y);
+    const valid = fromPoint && fromPoint !== document.body && fromPoint !== document.documentElement && !fromPoint.closest('#__emcss_widget__');
+    const geometric = deepestElAtPoint(document.body, x, y);
+    // If geometric is deeper inside the z-index-correct element, prefer it (pointer-events:none case)
+    if (valid && geometric && fromPoint.contains(geometric) && geometric !== fromPoint) return geometric;
+    if (valid) return fromPoint;
+    return geometric;
+  }
+
+  const HSKIP = /^(js-|is-|has-|slick-|aos-|animated|active|open|closed|visible|hidden|show|hide|fade|collapse|loading|loaded|emcss|__emcss|parallax|redesign|container$)/;
+
+  // Deprioritised classes: skipped when other classes are available, used as fallback if alone.
+  const HSKIP_SOFT = new Set(['lp-vertical-paddings', 'lp-container']);
 
   // Return the single most-meaningful class for a node, or null.
+  // Priority: BEM element (__) > BEM modifier (--) > BEM block (confirmed via descendants) > non-lp- > lp-
   function hoverMainClass(node) {
-    const cls = [...(node.classList || [])].filter(c => c && !HSKIP.test(c));
-    if (!cls.length) return null;
-    return cls.find(c => c.includes('__')) || cls.find(c => c.includes('--')) || cls[0];
+    const all = [...(node.classList || [])].filter(c => c && !HSKIP.test(c));
+    if (!all.length) return null;
+    // Use preferred (non-soft-skip) classes; fall back to soft-skip ones if nothing else
+    const cls = all.filter(c => !HSKIP_SOFT.has(c)).length
+      ? all.filter(c => !HSKIP_SOFT.has(c))
+      : all;
+
+    // BEM element (has __)
+    const bemEl = cls.find(c => c.includes('__'));
+    if (bemEl) return bemEl;
+
+    // BEM modifier (has --)
+    const bemMod = cls.find(c => c.includes('--'));
+    if (bemMod) return bemMod;
+
+    // Multiple candidates: find which one is actually used as a BEM block by descendants
+    if (cls.length > 1) {
+      const candidates = new Set(cls);
+      for (const d of node.querySelectorAll('[class*="__"]')) {
+        for (const c of d.classList) {
+          if (c.includes('__')) {
+            const block = c.split('__')[0];
+            if (candidates.has(block)) return block;
+          }
+        }
+      }
+    }
+
+    // Fall back: prefer non-lp- class, then lp- as last resort
+    return cls.find(c => !c.startsWith('lp-')) || cls[0];
+  }
+
+  // Return secondary state-like classes on a node (e.g. 'scroll', 'sticky') that should
+  // be included as :is() modifiers. Excludes the primary class, BEM classes, and HSKIP noise.
+  const STATE_WHITELIST = new Set(['scroll', 'active', 'disabled']);
+
+  function getStateModifiers(node) {
+    if (!node || !node.classList) return [];
+    return [...node.classList].filter(c => STATE_WHITELIST.has(c));
   }
 
   // Build an array of nested SCSS selectors from rootEl's context down to el.
@@ -2391,38 +2636,59 @@
       if (cls && cls.includes('__')) bemBlocks.add(cls.split('__')[0]);
     }
 
-    // Keep: primary (outermost), BEM elements, their blocks, and target (el)
+    // Keep: primary (outermost), BEM elements/blocks, and target (el).
+    // In BEM mode: skip intermediate BEM elements — only keep the block itself,
+    // so the output is .block { &__target { } } not .block { &__mid { &__target { } } }.
     const primary = trimmed[0];
     const target  = trimmed[trimmed.length - 1];
     const filtered = trimmed.filter(({ node: n, cls }) => {
       if (n === primary.node || n === target.node) return true;
       if (!cls) return false;
-      if (cls.includes('__')) return true;   // BEM element
-      if (bemBlocks.has(cls)) return true;   // BEM block
+      if (fmtMode === 'scss') {
+        if (cls.includes('__')) return true;  // keep all BEM elements in SCSS mode
+        if (bemBlocks.has(cls)) return true;
+      } else {
+        // BEM mode: keep blocks but skip intermediate BEM elements
+        if (!cls.includes('__') && bemBlocks.has(cls)) return true;
+      }
       return false;
     });
 
     // Build SCSS path — BEM mode uses & notation, SCSS mode keeps full class names
     const path = [];
-    for (const { cls, isTag } of filtered) {
+    for (const { cls, isTag, node: stepNode } of filtered) {
       if (!cls) continue;
+      const states    = (!isTag && stepNode) ? getStateModifiers(stepNode) : [];
+      const stateStr  = states.map(s => ':is(.' + s + ')').join('');
       if (!isTag && cls.includes('__')) {
-        const block  = cls.split('__')[0];
-        const suffix = cls.slice(block.length);
+        const block    = cls.split('__')[0];
+        const suffix   = cls.slice(block.length);
+        const blockSel = '.' + block;
+        const lastPath = path.length ? path[path.length - 1] : '';
+        // Match prior block entry even when it already has :is() state modifiers
+        const lastIsBlock = lastPath === blockSel || lastPath.startsWith(blockSel + ':');
         if (fmtMode === 'scss') {
-          // SCSS mode: keep full class name, drop redundant block entry
-          if (path.length && path[path.length - 1] === '.' + block) path.pop();
-          path.push('.' + cls);
+          if (lastIsBlock) path.pop();
+          path.push('.' + cls + stateStr);
         } else {
-          // BEM mode: compress to & notation
-          if (path.length && path[path.length - 1] === '.' + block) {
+          if (lastIsBlock) {
             path.push('&' + suffix);
           } else {
-            path.push('.' + block, '&' + suffix);
+            path.push('.' + block + stateStr, '&' + suffix);
           }
         }
       } else {
-        path.push(isTag ? cls : '.' + cls);
+        path.push(isTag ? cls : '.' + cls + stateStr);
+      }
+    }
+
+    // For navbar roots (<nav id="...">): if the nav has JS state classes (e.g. .scroll),
+    // prepend #nav-id:is(.stateClass) as the outermost path level.
+    if (!rootEl && root && root.tagName && root.tagName.toLowerCase() === 'nav' && root.id && !root.id.startsWith('__emcss')) {
+      const rootStates = [...(root.classList || [])].filter(c => STATE_WHITELIST.has(c));
+      if (rootStates.length) {
+        const rootSel = '#' + root.id + rootStates.map(s => ':is(.' + s + ')').join('');
+        path.unshift(rootSel);
       }
     }
 
@@ -2755,8 +3021,8 @@
   // ── Public API ────────────────────────────────────────────────────────────
   window.__emcss = {
     show:        () => widget.classList.remove('emcss--hidden'),
-    hide:        () => widget.classList.add('emcss--hidden'),
-    toggle:      () => widget.classList.toggle('emcss--hidden'),
+    hide:        () => { widget.classList.add('emcss--hidden'); exitHoverMode(); activePickerCleanups.forEach(fn => fn()); activePickerCleanups.length = 0; },
+    toggle:      () => { if (widget.classList.toggle('emcss--hidden')) { exitHoverMode(); activePickerCleanups.forEach(fn => fn()); activePickerCleanups.length = 0; } },
     clearEditor: () => { editor.value = ''; afterEdit(); },
   };
 
