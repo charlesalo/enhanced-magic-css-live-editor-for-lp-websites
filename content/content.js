@@ -645,6 +645,53 @@
   pseudoBadge.style.cssText = 'display:none;position:fixed;z-index:2147483646;pointer-events:none;';
   document.body.appendChild(pseudoBadge);
 
+  // ── Box model overlay (DevTools-style margin/border/padding/content) ──────
+  const boxModelEl = document.createElement('div');
+  boxModelEl.id = '__emcss_boxmodel__';
+  boxModelEl.style.cssText = 'display:none;position:fixed;top:0;left:0;z-index:2147483644;pointer-events:none;';
+  document.body.appendChild(boxModelEl);
+
+  function updateBoxModel(el) {
+    if (!el) { boxModelEl.style.display = 'none'; return; }
+    const rect = el.getBoundingClientRect();
+    const cs   = window.getComputedStyle(el);
+
+    const mt = parseFloat(cs.marginTop)         || 0;
+    const mr = parseFloat(cs.marginRight)       || 0;
+    const mb = parseFloat(cs.marginBottom)      || 0;
+    const ml = parseFloat(cs.marginLeft)        || 0;
+    const bt = parseFloat(cs.borderTopWidth)    || 0;
+    const br = parseFloat(cs.borderRightWidth)  || 0;
+    const bb = parseFloat(cs.borderBottomWidth) || 0;
+    const bl = parseFloat(cs.borderLeftWidth)   || 0;
+    const pt = parseFloat(cs.paddingTop)        || 0;
+    const pr = parseFloat(cs.paddingRight)      || 0;
+    const pb = parseFloat(cs.paddingBottom)     || 0;
+    const pl = parseFloat(cs.paddingLeft)       || 0;
+
+    const mx = rect.left - ml;
+    const my = rect.top  - mt;
+    const mw = rect.width  + ml + mr;
+    const mh = rect.height + mt + mb;
+
+    const fmt = n => Number.isInteger(n) ? n : +n.toFixed(1);
+    const tipText = `${fmt(rect.width)} × ${fmt(rect.height)}`;
+    const tipY = rect.bottom + 6 < window.innerHeight - 24 ? rect.bottom + 6 : rect.top - 24;
+    const tipX = Math.min(Math.max(rect.left + rect.width / 2, 60), window.innerWidth - 60);
+
+    boxModelEl.innerHTML = `
+<div style="position:fixed;left:${mx}px;top:${my}px;width:${mw}px;height:${mh}px;background:rgba(246,178,107,0.35);box-sizing:border-box;">
+  <div style="position:absolute;left:${ml}px;top:${mt}px;right:${mr}px;bottom:${mb}px;background:rgba(255,229,153,0.35);box-sizing:border-box;">
+    <div style="position:absolute;left:${bl}px;top:${bt}px;right:${br}px;bottom:${bb}px;background:rgba(147,196,125,0.35);box-sizing:border-box;">
+      <div style="position:absolute;left:${pl}px;top:${pt}px;right:${pr}px;bottom:${pb}px;background:rgba(111,168,220,0.35);"></div>
+    </div>
+  </div>
+</div>
+<div style="position:fixed;left:${tipX}px;top:${tipY}px;transform:translateX(-50%);font:11px/1.6 sans-serif;background:#0f172a;color:#94a3b8;padding:1px 8px;border-radius:3px;border:1px solid #2a3447;white-space:nowrap;">${tipText}</div>`;
+
+    boxModelEl.style.display = 'block';
+  }
+
   function hasPseudo(el, pseudo) {
     const cs = window.getComputedStyle(el, pseudo);
     const content = cs.getPropertyValue('content');
@@ -740,6 +787,7 @@
     hoverTarget = el;
     el.classList.add('__emcss_hover_highlight__');
     updatePseudoBadge(el);
+    updateBoxModel(el);
   }
 
   function hoverOnClick(e) {
@@ -761,7 +809,7 @@
     if (layerMode) {
       const stack = (document.elementsFromPoint(e.clientX, e.clientY) || [])
         .filter(n => n && !n.closest('#__emcss_widget__') && !n.closest('#__emcss_layer_picker__')
-                  && n !== pseudoBadge && n !== document.documentElement && n !== document.body);
+                  && n !== pseudoBadge && !boxModelEl.contains(n) && n !== document.documentElement && n !== document.body);
       const candidates = [el, ...stack.filter(n => n !== el)].map(n => ({
         el: n,
         pseudos: { before: hasPseudo(n, '::before'), after: hasPseudo(n, '::after') }
@@ -785,6 +833,7 @@
     document.body.style.cursor = '';
     if (hoverTarget) { hoverTarget.classList.remove('__emcss_hover_highlight__'); hoverTarget = null; }
     pseudoBadge.style.display = 'none';
+    boxModelEl.style.display = 'none';
     dismissLayerPicker();
     document.removeEventListener('mouseover', hoverOnMouseOver, true);
     document.removeEventListener('click',     hoverOnClick,     true);
@@ -2766,6 +2815,7 @@
       hoveredEl.style.outline = savedOutline;
       hoveredEl.style.outlineOffset = savedOutlineOffset;
       hoveredEl = null;
+      boxModelEl.style.display = 'none';
     }
 
     function onMouseMove(e) {
@@ -2782,6 +2832,7 @@
       const path = buildSelectorPath(el, sectionEl);
       if (!path) { clearHover(); tooltip.style.display = 'none'; return; }
       applyHover(el);
+      updateBoxModel(el);
       tooltip.textContent = pathLabel(path);
       tooltip.style.display = 'block';
     }
@@ -2813,6 +2864,7 @@
       sectionEl.removeEventListener('click',     onClick, true);
       clearHover();
       tooltip.remove();
+      boxModelEl.style.display = 'none';
       const idx = activePickerCleanups.indexOf(cleanup);
       if (idx !== -1) activePickerCleanups.splice(idx, 1);
     }
