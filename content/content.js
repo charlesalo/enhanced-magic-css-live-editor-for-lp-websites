@@ -19,6 +19,7 @@
         <span class="emcss__mode-badge" id="emcss-mode-badge">CSS</span>
         <button class="emcss__btn-icon" id="emcss-settings" title="Settings">&#9881;</button>
         <button class="emcss__btn-icon emcss__btn-icon--minimize" id="emcss-minimize" title="Minimize">&#8212;</button>
+        <button class="emcss__btn-icon emcss__btn-icon--maximize" id="emcss-maximize" title="Maximize">&#9633;</button>
         <button class="emcss__btn-icon emcss__btn-icon--close" id="emcss-close" title="Close widget">&#10005;</button>
       </div>
     </div>
@@ -246,10 +247,14 @@
   let undoStack    = [''];
   let redoStack    = [];
   let minimized    = false;
+  let maximized    = false;
+  let preMaxRect   = null;
   let lastSavedPos  = null;
   let lastSavedSize = null;
   let hoverMode    = false;
   let hoverTarget  = null;
+  let activeElEditor  = null;
+  let activeElSyncFn  = null;
   const DEFAULT_MOODBOARD = 'Default Build';
   let buildMode    = false;
   let customEls    = [];
@@ -359,7 +364,7 @@
     const mode = detectMode(code);
     if (mode === 'CSS') return { css: code, error: null };
     try {
-      let out = code.replace(/\/\/[^\n]*/g, '');
+      let out = code.replace(/(?<![:('"\/])\/\/[^\n]*/g, '');
       if (mode === 'SASS') out = sassToScss(out);
       const vars = {};
       out = out.replace(/\$([a-zA-Z0-9_-]+)\s*:\s*([^;{}\n]+);/g, (_, n, v) => { vars[n.trim()] = v.trim(); return ''; });
@@ -600,6 +605,43 @@
     }
   });
 
+  const maxBtn = widget.querySelector('#emcss-maximize');
+  maxBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    maximized = !maximized;
+    widget.classList.toggle('emcss--maximized', maximized);
+    maxBtn.title = maximized ? 'Restore' : 'Maximize';
+    maxBtn.innerHTML = maximized ? '&#10064;' : '&#9633;';
+    if (maximized) {
+      const rect = widget.getBoundingClientRect();
+      preMaxRect = { x: rect.left, y: rect.top, w: rect.width, h: rect.height };
+      widget.style.setProperty('left',   '0',     'important');
+      widget.style.setProperty('top',    '0',     'important');
+      widget.style.setProperty('right',  'auto',  'important');
+      widget.style.setProperty('width',  '100vw', 'important');
+      widget.style.setProperty('height', '100vh', 'important');
+    } else {
+      const r = preMaxRect;
+      preMaxRect = null;
+      if (r) {
+        widget.style.setProperty('left',   r.x + 'px', 'important');
+        widget.style.setProperty('top',    r.y + 'px', 'important');
+        widget.style.setProperty('width',  r.w + 'px', 'important');
+        widget.style.setProperty('height', r.h + 'px', 'important');
+      } else if (lastSavedPos && lastSavedSize) {
+        widget.style.setProperty('left',   lastSavedPos.x + 'px', 'important');
+        widget.style.setProperty('top',    lastSavedPos.y + 'px', 'important');
+        widget.style.setProperty('width',  lastSavedSize.w + 'px', 'important');
+        widget.style.setProperty('height', lastSavedSize.h + 'px', 'important');
+      } else {
+        widget.style.removeProperty('left');
+        widget.style.removeProperty('top');
+        widget.style.removeProperty('width');
+        widget.style.removeProperty('height');
+      }
+    }
+  });
+
   // ── Toolbar ───────────────────────────────────────────────────────────────
   const applyBtn = widget.querySelector('#emcss-apply');
   applyBtn.addEventListener('click', applyCSS);
@@ -762,7 +804,8 @@
           ev.preventDefault();
           ev.stopPropagation();
           dismissLayerPicker();
-          insertSelectorPath(path, pseudo, editor, () => { afterEdit(); exitHoverMode(); tabEditor.click(); });
+          const { targetEditor, syncFn } = hoverInsertTarget();
+          insertSelectorPath(path, pseudo, targetEditor, syncFn);
         });
         layerPicker.appendChild(row);
       });
@@ -788,6 +831,19 @@
     el.classList.add('__emcss_hover_highlight__');
     updatePseudoBadge(el);
     updateBoxModel(el);
+  }
+
+  function hoverInsertTarget() {
+    if (tabElements.classList.contains('emcss__tab--active') && activeElEditor) {
+      return {
+        targetEditor: activeElEditor,
+        syncFn: () => { if (activeElSyncFn) activeElSyncFn(); exitHoverMode(); },
+      };
+    }
+    return {
+      targetEditor: editor,
+      syncFn: () => { afterEdit(); exitHoverMode(); tabEditor.click(); },
+    };
   }
 
   function hoverOnClick(e) {
@@ -824,7 +880,8 @@
       return;
     }
 
-    insertSelectorPath(path, null, editor, () => { afterEdit(); exitHoverMode(); tabEditor.click(); });
+    const { targetEditor, syncFn } = hoverInsertTarget();
+    insertSelectorPath(path, null, targetEditor, syncFn);
   }
 
   function exitHoverMode() {
@@ -1419,10 +1476,19 @@
     }
   }
 
+  function firstDiffPos(a, b) {
+    const len = Math.min(a.length, b.length);
+    for (let i = 0; i < len; i++) if (a[i] !== b[i]) return i;
+    return len;
+  }
+
   function undo() {
     if (undoStack.length <= 1) return;
+    const current = undoStack[undoStack.length - 1];
     redoStack.push(undoStack.pop());
-    editor.value = undoStack[undoStack.length - 1];
+    const restored = undoStack[undoStack.length - 1];
+    editor.value = restored;
+    editor.selectionStart = editor.selectionEnd = firstDiffPos(restored, current);
     updateAll();
     if (autoChk.checked) scheduleApply();
   }
@@ -1965,8 +2031,8 @@
   // depth: 0 = findBy element IS the section; 1 = parent of findBy is the section
   const TEMPLATES = {
     'Masterpiece': [
-      { name: 'Homepage Opening with Search',   findBy: '.redesign.opening-with-search',               depth: 1, buildCode: '' },
-      { name: 'Homepage Opening - Full Bleed',  findBy: '.opening-with-search.parallax',               depth: 1, buildCode: '' },
+      { name: 'Homepage Opening with Search',   findBy: '.redesign.opening-with-search:not(.parallax)', depth: 1, buildCode: '' },
+      { name: 'Homepage Opening - Full Bleed',  findBy: '.opening-with-search.parallax',                depth: 1, buildCode: '' },
       { name: 'Stats Highlight',                findBy: '.company-stats',                             depth: 1, buildCode: '' },
       { name: 'Featured Agent',                 findBy: '.section:has(.agent-details)',                depth: 1, buildCode: '' },
       { name: 'Featured Team',                  findBy: '.featured-team',                              depth: 1, buildCode: '' },
@@ -2015,10 +2081,56 @@
     'Producer': [
       {
         name: 'Homepage Opening with Rotating Headlines',
-        findBy: '.video-section', depth: 0,
+        findBy: '.video-section:has(.collection)', depth: 0,
         buildCode: '/* START - spacing for title + subtitle + buttons */\n.collection .btn-container {\n    margin-top: 0 !important;\n    .lp-btn {\n        min-width: 250px;\n    }\n}\n.lp-title-group .lp-text--subtitle, .lp-title-group .lp-text--subtitle p {\n    margin-bottom: 0 !important;\n}\n.lp-h1, h1 {\n    margin-bottom: 0px !important;\n}',
       },
-      { name: 'Gallery Style Menu', findBy: '.gallery-component', depth: 1, buildCode: '' },
+      { name: 'Homepage Opening with Rotating Headlines', findBy: '.image-section:has(.collection)',                                       depth: 0, buildCode: '' },
+      { name: 'Homepage Opening',              findBy: '.video-section:has(.full-screen-video-component):not(:has(.collection)):not(:has(.opening-with-search))', depth: 0, buildCode: '' },
+      { name: 'Homepage Opening with Search',  findBy: '.redesign.opening-with-search', depth: 1, buildCode: '' },
+      { name: 'Hoverable Image with Info',    findBy: '.hoverable-section',            depth: 1, buildCode: '' },
+      { name: 'Featured Testimonials',              findBy: '.featured-testimonials',        depth: 1, buildCode: '' },
+      { name: 'Featured Properties Slider',         findBy: '.featured-properties-section',  depth: 1, buildCode: '' },
+      { name: 'Instant Home Valuation',             findBy: '.home-valuation',               depth: 1, buildCode: '' },
+      { name: 'Featured Neighborhoods - Full Bleed', findBy: '.featured-neighborhoods-grid:has(.image-holder > img)',  depth: 1, buildCode: '' },
+      { name: 'Newsletter Sign Up',                 findBy: '.newsletter-signup',            depth: 1, buildCode: '' },
+      { name: 'Featured Blogs',                     findBy: '.featured-press-section',       depth: 1, buildCode: '' },
+      { name: 'Agent Bio with Detail Bar',          findBy: '.agent-bio',                    depth: 1, buildCode: '' },
+      { name: 'Agents Slider with Office Filter',   findBy: '.lp-vertical-paddings:has(.slider.js-slider)', depth: 1, buildCode: '' },
+      { name: 'Properties Grid',                    findBy: '.property-list-section',        depth: 1, buildCode: '' },
+      { name: 'Property Intro with Title Below',    findBy: '.property-intro-2',             depth: 1, buildCode: '' },
+      { name: 'Property Description with Social Share', findBy: '.property-description',     depth: 1, buildCode: '' },
+      { name: 'Virtual Tour',                       findBy: '.virtual-tour',                 depth: 1, buildCode: '' },
+      { name: 'Property Agent',                     findBy: '.property-agent-cta',           depth: 1, buildCode: '' },
+      { name: 'Features & Amenities',               findBy: '.features-amenities',           depth: 1, buildCode: '' },
+      { name: 'Schedule a Showing',                 findBy: '.schedule.section',             depth: 1, buildCode: '' },
+      { name: 'Property Mortgage Calculator',       findBy: '.mg-calc',                      depth: 1, buildCode: '' },
+      { name: 'Property Map',                       findBy: 'section > .wrapper > .map-container', depth: 2, buildCode: '' },
+      { name: 'Property Neighborhood',              findBy: '.property-neighborhood',        depth: 1, buildCode: '' },
+      { name: 'CTA Block',                          findBy: '.lp-container.cta-block',       depth: 2, buildCode: '' },
+      { name: 'Work With Us',                       findBy: '.work-with-us',                 depth: 1, buildCode: '' },
+      { name: 'Custom Intro',                       findBy: '.custom-intro',                 depth: 1, buildCode: '' },
+      { name: 'Gallery Style Menu',                 findBy: '.gallery-component',            depth: 1, buildCode: '' },
+      { name: 'Timeline',                           findBy: '.lp-container.lp-vertical-paddings.redesign:has(> ul.collection)', depth: 1, buildCode: '' },
+      { name: 'Neighborhood Intro',                 findBy: '.image-page-introduction-container', depth: 1, buildCode: '' },
+      { name: 'MLS Properties Grid with Filters',   findBy: '.properties-grid.lp-vertical-paddings', depth: 1, buildCode: '' },
+      { name: 'Neighborhood MLS Geolocation CTA',   findBy: '.wrapper.redesign',              depth: 1, buildCode: '' },
+      { name: 'Neighborhood Overview',              findBy: '.section:has(.item__icon-population)', depth: 1, buildCode: '' },
+      { name: 'Neighborhood Points of Interest & Commute', findBy: '.lp-vertical-paddings:has(.poi-title)', depth: 1, buildCode: '' },
+      { name: 'Neighborhood Demographics & Employment', findBy: '.section:has(.nav-tab)',     depth: 1, buildCode: '' },
+      { name: 'Neighborhood Schools',               findBy: '.section:has(.items-box)',       depth: 1, buildCode: '' },
+      { name: 'Neighborhood Image Slider',          findBy: '.neighborhood-image-slider',     depth: 2, buildCode: '' },
+      { name: 'Neighborhood Map',                   findBy: '.neighborhood-map',              depth: 1, buildCode: '' },
+      { name: 'Similar Neighborhoods - Full Bleed', findBy: '.featured-neighborhoods-grid:has(.image-holder[style*="background-image"])', depth: 1, buildCode: '' },
+      { name: 'Testimonial List with Initials',     findBy: '.redesign.testimonials',         depth: 1, buildCode: '' },
+      { name: 'Blog Grid',                          findBy: '.redesign.blog-list',            depth: 1, buildCode: '' },
+      { name: 'Blog Intro',                         findBy: '.blog-details-intro',            depth: 1, buildCode: '' },
+      { name: 'Blog Content',                       findBy: '.redesign.blog-content',         depth: 1, buildCode: '' },
+      { name: 'Related Blog Articles',              findBy: '.related-blog-articles',         depth: 1, buildCode: '' },
+      { name: 'Custom Form',                        findBy: '.custom-form.redesign',          depth: 1, buildCode: '' },
+      { name: 'Boxed Text',                         findBy: '.boxed-text.lp-vertical-paddings', depth: 1, buildCode: '' },
+      { name: 'Text Grid',                          findBy: '.lp-container.text-grid',          depth: 1, buildCode: '' },
+      { name: '404',                                findBy: '.image-section:has(> .lp-container > h1.lp-h1)', depth: 0, buildCode: '' },
+      { name: 'Fair Housing Link',                  findBy: '.fair-housing.redesign',                         depth: 1, buildCode: '' },
     ],
     'Visionary': [
       { name: 'Opening with Search', findBy: '.video-section',  depth: 0, buildCode: '' },
@@ -2791,7 +2903,7 @@
   // Track all active Elements-tab picker cleanups so widget close can stop them all
   const activePickerCleanups = [];
 
-  function startHoverPicker(sectionEl, elEditor, syncLinesFn) {
+  function startHoverPicker(sectionEl, elEditor, syncLinesFn, onPick) {
     const tooltip = document.createElement('div');
     tooltip.style.cssText = 'position:fixed;z-index:2147483647;background:#1e293b;color:#94d5b2;font-family:monospace;font-size:12px;padding:4px 10px;border-radius:4px;pointer-events:none;display:none;border:1px solid #334155;white-space:nowrap;max-width:400px;';
     document.body.appendChild(tooltip);
@@ -2850,6 +2962,7 @@
       e.preventDefault();
       e.stopPropagation();
       insertSelectorPath(path, null, elEditor, syncLinesFn);
+      if (onPick) onPick();
     }
 
     sectionEl.addEventListener('mouseover', onMouseOver);
@@ -2881,6 +2994,8 @@
       return;
     }
 
+    const closeItem = [];   // close functions, one per item
+
     items.forEach((item, i) => {
       const itemEl = document.createElement('div');
       itemEl.className = 'emcss__el-item';
@@ -2903,6 +3018,7 @@
           </div>
           <div class="emcss__el-selector-close">}</div>
           <div class="emcss__el-foot">
+            <button class="emcss__btn emcss__el-hover-btn" title="Toggle hover picker (click elements inside this section to capture their selectors)">Hover</button>
             <button class="emcss__btn emcss__el-fmt-btn" title="Format SCSS">Format</button>
             <button class="emcss__btn emcss__el-action-btn ${buildMode ? 'emcss__btn--build-save' : 'emcss__btn--apply'}">${buildMode ? 'Save' : 'Apply'}</button>
           </div>
@@ -2931,6 +3047,7 @@
           elEditor.value = data[key] !== undefined ? data[key] : item.buildCode;
           editorLoaded = true;
           syncLines();
+          applyElCSS();
           setTimeout(() => { elEditor.selectionStart = elEditor.selectionEnd = 0; elEditor.focus(); }, 50);
         });
       }
@@ -2967,16 +3084,44 @@
       }
 
       let pickerCleanup = null;
+      const hoverElBtn = itemEl.querySelector('.emcss__el-hover-btn');
+
+      function stopPicker() {
+        if (!pickerCleanup) return;
+        pickerCleanup(); pickerCleanup = null;
+        hoverElBtn.classList.remove('emcss__el-hover-btn--active');
+        hoverElBtn.textContent = 'Hover';
+      }
+
+      function closeThisItem() {
+        if (body.classList.contains('emcss__el-body--closed')) return;
+        body.classList.add('emcss__el-body--closed');
+        hd.classList.remove('emcss__el-hd--open');
+        stopPicker();
+        if (activeElEditor === elEditor) { activeElEditor = null; activeElSyncFn = null; }
+      }
+
+      hoverElBtn.addEventListener('click', () => {
+        if (pickerCleanup) {
+          stopPicker();
+        } else {
+          pickerCleanup = startHoverPicker(item.element, elEditor, syncLines, stopPicker);
+          hoverElBtn.classList.add('emcss__el-hover-btn--active');
+          hoverElBtn.textContent = 'Hover ✕';
+        }
+      });
+      closeItem.push(closeThisItem);
 
       hd.addEventListener('click', () => {
         const isOpen = !body.classList.contains('emcss__el-body--closed');
         if (isOpen) {
-          body.classList.add('emcss__el-body--closed');
-          hd.classList.remove('emcss__el-hd--open');
-          if (pickerCleanup) { pickerCleanup(); pickerCleanup = null; }
+          closeThisItem();
         } else {
+          closeItem.forEach(fn => fn());
           body.classList.remove('emcss__el-body--closed');
           hd.classList.add('emcss__el-hd--open');
+          activeElEditor = elEditor;
+          activeElSyncFn = syncLines;
           item.element.scrollIntoView({ behavior: 'smooth', block: 'center' });
           highlightElement(item.element);
           if (buildMode) {
@@ -2984,7 +3129,6 @@
           } else {
             setTimeout(() => { elEditor.selectionStart = elEditor.selectionEnd = 0; elEditor.focus(); }, 100);
           }
-          pickerCleanup = startHoverPicker(item.element, elEditor, syncLines);
         }
       });
 
