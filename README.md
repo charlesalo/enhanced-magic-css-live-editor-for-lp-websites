@@ -78,9 +78,10 @@ Click **Format** to auto-format your current code in the selected mode.
 |---|---|
 | `Ctrl/Cmd + S` | Apply CSS |
 | `Ctrl/Cmd + Z` | Undo |
-| `Ctrl/Cmd + Y` or `Ctrl/Cmd + Shift + Z` | Redo |
+| `Ctrl/Cmd + Shift + Z` or `Alt + Shift + Z` | Redo |
 | `Ctrl/Cmd + /` | Toggle comment |
 | `Tab` | Indent (or unindent selection) |
+| `Ctrl/Cmd + Enter` | Send AI prompt (when AI bar is open) |
 
 ### Autocomplete
 
@@ -89,6 +90,18 @@ The editor suggests CSS properties, values, pseudo-classes, pseudo-elements, and
 ### Copy
 
 Click **Copy** to copy the raw editor code to your clipboard.
+
+### AI Assistant (Editor Tab)
+
+Click **✦ AI** in the toolbar to open the AI prompt bar powered by Gemini.
+
+- Type a plain-English request — e.g. *"add more padding to the hero section"* or *"make the heading font larger"*
+- Click **Send** or press `Ctrl/Cmd + Enter`
+- Gemini reads the full HTML structure of every section on the page and the current SCSS in the editor, then generates accurate, targeted styles
+- **Append** (default) — response is added after existing code. Uncheck to replace the editor content entirely.
+- Undo (`Ctrl/Cmd + Z`) works as expected — the editor state is snapshotted before every AI write
+
+> Requires a Gemini API key. Add it in **Settings → ✦ Gemini AI**. A free key is available at [aistudio.google.com](https://aistudio.google.com) using a personal Google account — no billing required.
 
 ---
 
@@ -132,6 +145,7 @@ Click a section row to expand it. Inside you'll find:
 
 - A CSS editor scoped to that section's selector.
 - **Hover** — activates the in-section hover picker (see below).
+- **✦ AI** — opens the AI prompt bar scoped to that section.
 - **Format** — formats the code.
 - **Apply** — injects the code for that section only.
 - **Copy** — copies the section's code.
@@ -148,6 +162,14 @@ Each expanded section has a **Hover** button in the footer. Click it to activate
 
 **Shortcut keys also work here:** if an element accordion is open and you use `Alt/Cmd` to activate the global hover mode, picking any element will insert its selector into the currently open element's editor and exit hover mode — without switching tabs.
 
+### AI Assistant (Elements Tab)
+
+Each expanded section card has a **✦ AI** button in its footer. Click it to open the AI prompt bar scoped to that specific section:
+
+- Gemini receives the section's full HTML structure and the current SCSS in that card's editor
+- Generated code is written directly into that section's editor — already scoped, no wrapping needed
+- Same **Append / Replace** and undo behaviour as the Editor tab AI
+
 ### Build Mode
 
 Enable **Build Mode** in the settings tab. When active:
@@ -163,6 +185,10 @@ Enable **Build Mode** in the settings tab. When active:
 ## Settings
 
 Open settings via the **gear icon** (⚙) in the widget header.
+
+### Gemini AI Key
+
+At the top of the Settings panel, paste your Gemini API key and click **Save Key**. Get a free key at [aistudio.google.com](https://aistudio.google.com) — no billing or credit card required for the free tier (15 requests/min, 1,500 requests/day).
 
 ### Adding Custom Elements
 

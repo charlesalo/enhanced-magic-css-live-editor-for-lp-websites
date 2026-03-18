@@ -1244,3 +1244,96 @@
 #__emcss_widget__ .emcss__rh--ne { top: 0 !important; right: 0 !important; width: 12px !important; height: 12px !important; cursor: ne-resize !important; }
 #__emcss_widget__ .emcss__rh--sw { bottom: 0 !important; left: 0 !important; width: 12px !important; height: 12px !important; cursor: sw-resize !important; }
 #__emcss_widget__ .emcss__rh--se { bottom: 0 !important; right: 0 !important; width: 12px !important; height: 12px !important; cursor: se-resize !important; }
+
+/* ── AI Bar ──────────────────────────────────────────────────────────────── */
+#__emcss_widget__ .emcss__ai-bar {
+  border-top: 1px solid #2a3447 !important;
+  background: #0d1117 !important;
+  padding: 8px 10px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 6px !important;
+}
+
+#__emcss_widget__ .emcss__ai-bar--hidden {
+  display: none !important;
+}
+
+#__emcss_widget__ .emcss__ai-row {
+  display: flex !important;
+  gap: 6px !important;
+  align-items: flex-start !important;
+}
+
+#__emcss_widget__ .emcss__ai-prompt {
+  flex: 1 !important;
+  background: #161b22 !important;
+  border: 1px solid #2a3447 !important;
+  border-radius: 4px !important;
+  color: #e2e8f0 !important;
+  font: 12px/1.5 monospace !important;
+  padding: 6px 8px !important;
+  resize: none !important;
+  outline: none !important;
+  min-height: 48px !important;
+}
+
+#__emcss_widget__ .emcss__ai-prompt:focus {
+  border-color: #a78bfa !important;
+}
+
+#__emcss_widget__ .emcss__btn--ai-send {
+  background: #4c1d95 !important;
+  color: #e2e8f0 !important;
+  border: 1px solid #6d28d9 !important;
+  white-space: nowrap !important;
+  align-self: flex-end !important;
+}
+
+#__emcss_widget__ .emcss__btn--ai-send:hover {
+  background: #6d28d9 !important;
+}
+
+#__emcss_widget__ .emcss__btn--ai-send:disabled {
+  opacity: 0.5 !important;
+  cursor: not-allowed !important;
+}
+
+#__emcss_widget__ .emcss__ai-foot {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 8px !important;
+}
+
+#__emcss_widget__ .emcss__ai-mode {
+  font: 11px/1 sans-serif !important;
+  color: #64748b !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  cursor: pointer !important;
+  user-select: none !important;
+}
+
+#__emcss_widget__ .emcss__ai-status {
+  font: 11px/1 monospace !important;
+  color: #a78bfa !important;
+  flex: 1 !important;
+  text-align: right !important;
+}
+
+#__emcss_widget__ .emcss__btn--ai-toggle {
+  color: #a78bfa !important;
+}
+
+#__emcss_widget__ .emcss__btn--ai-active {
+  color: #a78bfa !important;
+  border-color: rgba(167,139,250,0.4) !important;
+  background: rgba(167,139,250,0.08) !important;
+}
+
+#__emcss_widget__ .emcss__el-ai-bar {
+  border-top: none !important;
+  border-top: 1px solid #1e2d3d !important;
+}

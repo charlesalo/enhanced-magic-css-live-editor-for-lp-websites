@@ -60,6 +60,7 @@
           <button class="emcss__btn" id="emcss-copy">Copy</button>
           <button class="emcss__btn emcss__btn--danger" id="emcss-clear">Clear</button>
           <button class="emcss__btn emcss__btn--hover" id="emcss-hover" title="Hover mode: click any element to capture its selector">Hover</button>
+          <button class="emcss__btn emcss__btn--ai-toggle" id="emcss-ai-toggle" title="Toggle AI assistant">&#10022; AI</button>
         </div>
         <div class="emcss__toolbar-right">
           <label class="emcss__toggle">
@@ -71,10 +72,15 @@
         </div>
       </div>
 
-      <div class="emcss__footer">
-        <button class="emcss__btn" id="emcss-undo">Undo</button>
-        <span class="emcss__byte-count" id="emcss-bytes">0 bytes</span>
-        <button class="emcss__btn" id="emcss-redo">Redo</button>
+      <div class="emcss__ai-bar emcss__ai-bar--hidden" id="emcss-ai-bar">
+        <div class="emcss__ai-row">
+          <textarea class="emcss__ai-prompt" id="emcss-ai-prompt" placeholder="e.g. Add more padding, make the heading larger, center the subtitle…" rows="2" spellcheck="false"></textarea>
+          <button class="emcss__btn emcss__btn--ai-send" id="emcss-ai-send">Send</button>
+        </div>
+        <div class="emcss__ai-foot">
+          <label class="emcss__ai-mode"><input type="checkbox" id="emcss-ai-append" checked> Append</label>
+          <span class="emcss__ai-status" id="emcss-ai-status"></span>
+        </div>
       </div>
     </div>
 
@@ -107,6 +113,12 @@
 
     <div class="emcss__view emcss__view--hidden" id="emcss-settings-view">
       <div class="emcss__settings-section">
+        <div class="emcss__settings-section-label">&#10022; Gemini AI</div>
+        <div class="emcss__settings-form">
+          <input class="emcss__settings-input" type="password" id="emcss-gemini-key" placeholder="Gemini API key" autocomplete="off" />
+          <button class="emcss__btn emcss__btn--apply" id="emcss-gemini-save">Save Key</button>
+        </div>
+        <div class="emcss__settings-divider"></div>
         <div class="emcss__settings-section-label">Elements</div>
         <div class="emcss__settings-form">
           <input class="emcss__settings-input" type="text" id="emcss-cust-tpl"  list="emcss-tpl-list" placeholder="Template (e.g. Producer)" autocomplete="off" />
@@ -204,7 +216,6 @@
   const linesEl      = widget.querySelector('#emcss-lines');
   const statusEl     = widget.querySelector('#emcss-status');
   const cursorEl     = widget.querySelector('#emcss-cursor');
-  const bytesEl      = widget.querySelector('#emcss-bytes');
   const modeBadge    = widget.querySelector('#emcss-mode-badge');
   const autoChk      = widget.querySelector('#emcss-auto');
   const tabEditor    = widget.querySelector('#emcss-tab-editor');
@@ -336,15 +347,11 @@
     cursorEl.textContent = 'Ln ' + txt.length + ', Col ' + (txt[txt.length - 1].length + 1);
   }
 
-  function updateBytes() {
-    const b = new Blob([editor.value]).size;
-    bytesEl.textContent = b < 1024 ? b + ' bytes' : (b / 1024).toFixed(1) + ' KB';
-  }
 
   function updateAll() {
     updateLineNumbers();
     updateCursor();
-    updateBytes();
+
     modeBadge.textContent = detectMode(editor.value);
   }
 
@@ -646,8 +653,6 @@
   const applyBtn = widget.querySelector('#emcss-apply');
   applyBtn.addEventListener('click', applyCSS);
   widget.querySelector('#emcss-format').addEventListener('click', formatCode);
-  widget.querySelector('#emcss-undo').addEventListener('click', undo);
-  widget.querySelector('#emcss-redo').addEventListener('click', redo);
 
   function syncApplyBtn() {
     applyBtn.style.display = autoChk.checked ? 'none' : '';
@@ -677,6 +682,163 @@
     if (existing) existing.remove();
     setStatus('Styles removed', 'warning');
   });
+
+  // ── Gemini AI ─────────────────────────────────────────────────────────────
+  const GEMINI_SYSTEM_PROMPT = `You are a Senior CSS Engineer working inside the Enhanced Magic CSS browser extension — a live CSS/SCSS editor for Luxury Presence real estate website templates.
+Your responsibilities:
+- Diagnose CSS layout and styling issues from HTML structure and existing SCSS.
+- Suggest and apply precise, production-ready fixes.
+- Return ONLY valid SCSS code. No explanations, no markdown code fences (no \`\`\`scss), no prose — only the code itself.
+- The code is pasted directly into a live editor and applied to the page immediately.
+- When modifying existing styles, preserve the existing structure and only change or add what is necessary.
+- Use SCSS nesting and & parent references where appropriate.
+- Target the provided selector as the root scope when one is given.
+- Prefer minimal, surgical changes over full rewrites unless a rewrite is explicitly requested.`;
+
+  function getGeminiKey(cb) {
+    chrome.storage.local.get(['emcss_gemini_key'], d => cb(d.emcss_gemini_key || ''));
+  }
+
+  function gatherHtmlContext(sectionEl) {
+    if (!sectionEl) return '';
+    const raw = sectionEl.outerHTML;
+    return raw.length > 8000 ? raw.slice(0, 8000) + '\n…(truncated)' : raw;
+  }
+
+  function gatherPageContext() {
+    const sections = Array.from(document.querySelectorAll('section, [id^="section-"]'))
+      .filter(el => !el.closest('#__emcss_widget__'))
+      .slice(0, 20);
+    if (!sections.length) return '';
+
+    // Clone each section, strip noisy nodes (scripts, SVGs, images src, styles)
+    // so we send real class-name-rich HTML without wasting tokens on binary data
+    const stripped = sections.map(el => {
+      const clone = el.cloneNode(true);
+      clone.querySelectorAll('script, style, noscript').forEach(n => n.remove());
+      clone.querySelectorAll('svg').forEach(n => { n.innerHTML = ''; n.setAttribute('aria-hidden', 'true'); });
+      clone.querySelectorAll('img').forEach(n => {
+        n.removeAttribute('src'); n.removeAttribute('srcset'); n.removeAttribute('data-src');
+      });
+      clone.querySelectorAll('*').forEach(n => {
+        ['style', 'onclick', 'onload', 'data-uw-rm-brl', 'data-uw-original-href',
+         'data-uw-rm-heading', 'aria-label'].forEach(a => n.removeAttribute(a));
+      });
+      return clone.outerHTML;
+    }).join('\n\n');
+
+    const MAX = 14000;
+    return 'Full HTML of all page sections (scripts/images stripped for brevity):\n' +
+      (stripped.length > MAX ? stripped.slice(0, MAX) + '\n…(truncated)' : stripped);
+  }
+
+  async function streamGemini(apiKey, userText, onChunk, onDone, onError) {
+    let res;
+    try {
+      res = await fetch(
+        `https://generativelanguage.googleapis.com/v1alpha/models/gemini-3-flash-preview:streamGenerateContent?key=${encodeURIComponent(apiKey)}&alt=sse`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: userText }] }],
+            systemInstruction: { parts: [{ text: GEMINI_SYSTEM_PROMPT }] },
+            generationConfig: { temperature: 0.2, maxOutputTokens: 4096 },
+          }),
+        }
+      );
+    } catch (e) { onError('Network error: ' + e.message); return; }
+
+    if (!res.ok) {
+      try {
+        const j = await res.json();
+        if (res.status === 429) {
+          onError('Free tier rate limit reached — wait a moment and try again.');
+        } else {
+          onError(j.error?.message || 'API error ' + res.status);
+        }
+      } catch { onError('API error ' + res.status); }
+      return;
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop();
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const data = line.slice(6).trim();
+          if (!data || data === '[DONE]') continue;
+          try {
+            const json = JSON.parse(data);
+            const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (text) onChunk(text);
+          } catch { /* partial JSON — ignore */ }
+        }
+      }
+    } catch (e) { onError('Stream error: ' + e.message); return; }
+    onDone();
+  }
+
+  function sendAiRequest(targetEditor, syncFn, sectionEl, selector, promptText, appendMode, statusEl, sendBtn, afterApply) {
+    getGeminiKey(apiKey => {
+      if (!apiKey) { statusEl.textContent = '✦ Add API key in Settings first.'; return; }
+
+      const currentCode = targetEditor.value.trim();
+      const htmlCtx     = gatherHtmlContext(sectionEl);
+
+      const parts = [];
+      if (selector) {
+        parts.push(`Selector scope: ${selector}\nIMPORTANT: Do NOT wrap your output in this selector. The editor already applies it as the outer scope. Write only the inner rules.`);
+      } else {
+        const pageCtx = gatherPageContext();
+        if (pageCtx) parts.push(pageCtx);
+        parts.push(`Format mode: ${fmtMode.toUpperCase()} — generate selectors in ${fmtMode === 'bem' ? 'BEM style using & nesting (e.g. &__element, &--modifier)' : 'standard SCSS nesting with full class names'}.`);
+      }
+      parts.push(currentCode ? `Current SCSS:\n${currentCode}` : 'Current SCSS: (empty — write fresh styles)');
+      if (htmlCtx) parts.push(`HTML structure of this section:\n${htmlCtx}`);
+      parts.push(`Task: ${promptText}`);
+      const userText = parts.join('\n\n');
+
+      // Save undo snapshot before writing
+      undoStack.push(targetEditor.value);
+      redoStack.length = 0;
+
+      const prefix = appendMode && targetEditor.value.trimEnd() ? targetEditor.value.trimEnd() + '\n\n' : '';
+      let accumulated = '';
+
+      statusEl.textContent = '✦ Thinking…';
+      sendBtn.disabled = true;
+
+      streamGemini(
+        apiKey, userText,
+        chunk => {
+          accumulated += chunk;
+          targetEditor.value = prefix + accumulated;
+          targetEditor.scrollTop = targetEditor.scrollHeight;
+          if (syncFn) syncFn();
+          statusEl.textContent = '✦ Generating…';
+        },
+        () => {
+          if (syncFn) syncFn();
+          if (afterApply) afterApply();
+          statusEl.textContent = '✦ Done';
+          sendBtn.disabled = false;
+          setTimeout(() => { statusEl.textContent = ''; }, 3000);
+        },
+        err => {
+          statusEl.textContent = '✦ Error: ' + err;
+          sendBtn.disabled = false;
+        }
+      );
+    });
+  }
 
   // ── Hover mode (Editor tab) ───────────────────────────────────────────────
   const hoverBtn = widget.querySelector('#emcss-hover');
@@ -912,6 +1074,32 @@
   }
 
   hoverBtn.addEventListener('click', () => { if (hoverMode) exitHoverMode(); else enterHoverMode(); });
+
+  // ── Editor tab AI bar ─────────────────────────────────────────────────────
+  const aiToggleBtn = widget.querySelector('#emcss-ai-toggle');
+  const aiBar       = widget.querySelector('#emcss-ai-bar');
+  const aiPrompt    = widget.querySelector('#emcss-ai-prompt');
+  const aiSend      = widget.querySelector('#emcss-ai-send');
+  const aiAppend    = widget.querySelector('#emcss-ai-append');
+  const aiStatus    = widget.querySelector('#emcss-ai-status');
+
+  aiToggleBtn.addEventListener('click', () => {
+    const hidden = aiBar.classList.toggle('emcss__ai-bar--hidden');
+    aiToggleBtn.classList.toggle('emcss__btn--ai-active', !hidden);
+    if (!hidden) aiPrompt.focus();
+  });
+
+  aiSend.addEventListener('click', () => {
+    const prompt = aiPrompt.value.trim();
+    if (!prompt) return;
+    sendAiRequest(editor, afterEdit, null, null, prompt, aiAppend.checked, aiStatus, aiSend, () => {
+      if (autoChk.checked) scheduleApply();
+    });
+  });
+
+  aiPrompt.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); aiSend.click(); }
+  });
 
   // Hold Alt/Cmd to temporarily enter hover mode (hide widget while picking)
   let hoverKeyActive = false;
@@ -2571,6 +2759,18 @@
     });
   });
 
+  // Load saved Gemini key into settings input
+  const geminiKeyInput = widget.querySelector('#emcss-gemini-key');
+  const geminiSaveBtn  = widget.querySelector('#emcss-gemini-save');
+  getGeminiKey(key => { if (geminiKeyInput && key) geminiKeyInput.value = key; });
+  geminiSaveBtn.addEventListener('click', () => {
+    const key = geminiKeyInput.value.trim();
+    chrome.storage.local.set({ emcss_gemini_key: key }, () => {
+      geminiSaveBtn.textContent = 'Saved!';
+      setTimeout(() => { geminiSaveBtn.textContent = 'Save Key'; }, 1500);
+    });
+  });
+
   settingsBtn.addEventListener('click', () => {
     settingsOpen = !settingsOpen;
     settingsBtn.classList.toggle('emcss__btn-icon--active', settingsOpen);
@@ -3019,8 +3219,19 @@
           <div class="emcss__el-selector-close">}</div>
           <div class="emcss__el-foot">
             <button class="emcss__btn emcss__el-hover-btn" title="Toggle hover picker (click elements inside this section to capture their selectors)">Hover</button>
+            <button class="emcss__btn emcss__el-ai-btn" title="Toggle AI assistant">&#10022; AI</button>
             <button class="emcss__btn emcss__el-fmt-btn" title="Format SCSS">Format</button>
             <button class="emcss__btn emcss__el-action-btn ${buildMode ? 'emcss__btn--build-save' : 'emcss__btn--apply'}">${buildMode ? 'Save' : 'Apply'}</button>
+          </div>
+          <div class="emcss__ai-bar emcss__ai-bar--hidden emcss__el-ai-bar">
+            <div class="emcss__ai-row">
+              <textarea class="emcss__ai-prompt emcss__el-ai-prompt" placeholder="e.g. Add more padding, make the heading larger…" rows="2" spellcheck="false"></textarea>
+              <button class="emcss__btn emcss__btn--ai-send emcss__el-ai-send">Send</button>
+            </div>
+            <div class="emcss__ai-foot">
+              <label class="emcss__ai-mode"><input type="checkbox" class="emcss__el-ai-append" checked> Append</label>
+              <span class="emcss__ai-status emcss__el-ai-status"></span>
+            </div>
           </div>
         </div>
       `;
@@ -3110,6 +3321,30 @@
           hoverElBtn.textContent = 'Hover ✕';
         }
       });
+
+      const elAiBtn     = itemEl.querySelector('.emcss__el-ai-btn');
+      const elAiBar     = itemEl.querySelector('.emcss__el-ai-bar');
+      const elAiPrompt  = itemEl.querySelector('.emcss__el-ai-prompt');
+      const elAiSend    = itemEl.querySelector('.emcss__el-ai-send');
+      const elAiAppend  = itemEl.querySelector('.emcss__el-ai-append');
+      const elAiStatus  = itemEl.querySelector('.emcss__el-ai-status');
+
+      elAiBtn.addEventListener('click', () => {
+        const hidden = elAiBar.classList.toggle('emcss__ai-bar--hidden');
+        elAiBtn.classList.toggle('emcss__btn--ai-active', !hidden);
+        if (!hidden) elAiPrompt.focus();
+      });
+
+      elAiSend.addEventListener('click', () => {
+        const prompt = elAiPrompt.value.trim();
+        if (!prompt) return;
+        sendAiRequest(elEditor, syncLines, item.element, item.selector, prompt, elAiAppend.checked, elAiStatus, elAiSend, () => { applyElCSS(); });
+      });
+
+      elAiPrompt.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); elAiSend.click(); }
+      });
+
       closeItem.push(closeThisItem);
 
       hd.addEventListener('click', () => {
