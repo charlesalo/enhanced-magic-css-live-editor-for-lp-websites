@@ -116,6 +116,10 @@
         <div class="emcss__settings-section-label">&#10022; Gemini AI</div>
         <div class="emcss__settings-form">
           <input class="emcss__settings-input" type="password" id="emcss-gemini-key" placeholder="Gemini API key" autocomplete="off" />
+          <select class="emcss__settings-input" id="emcss-gemini-model">
+            <option value="gemini-3-flash-preview">Gemini 3 Flash — fast, everyday fixes (15 RPM / 1,500 RPD)</option>
+            <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro — most intelligent, complex layouts (2 RPM / 50 RPD)</option>
+          </select>
           <button class="emcss__btn emcss__btn--apply" id="emcss-gemini-save">Save Key</button>
         </div>
         <div class="emcss__settings-divider"></div>
@@ -599,12 +603,46 @@
 
   widget.querySelector('#emcss-minimize').addEventListener('click', e => {
     e.stopPropagation();
+    const mobile = window.innerWidth <= 768;
+    // Restore from maximize first if needed
+    if (maximized) {
+      maximized = false;
+      widget.classList.remove('emcss--maximized');
+      maxBtn.title = 'Maximize';
+      maxBtn.innerHTML = '&#9633;';
+      const r = preMaxRect;
+      preMaxRect = null;
+      if (mobile) {
+        // On mobile, only restore height — media query handles position/width
+        widget.style.removeProperty('height');
+      } else if (r) {
+        widget.style.setProperty('left',   r.x + 'px', 'important');
+        widget.style.setProperty('top',    r.y + 'px', 'important');
+        widget.style.setProperty('width',  r.w + 'px', 'important');
+        widget.style.setProperty('height', r.h + 'px', 'important');
+      } else {
+        widget.style.removeProperty('left');
+        widget.style.removeProperty('top');
+        widget.style.removeProperty('width');
+        widget.style.removeProperty('height');
+      }
+      // Always clear the 'right: auto' set during maximize
+      widget.style.removeProperty('right');
+    }
     minimized = !minimized;
     widget.classList.toggle('emcss--minimized', minimized);
     if (minimized) {
-      widget.style.setProperty('height', 'auto', 'important');
+      if (mobile) {
+        // Remove all inline position/size — let media query + .emcss--minimized handle it
+        ['left', 'top', 'right', 'bottom', 'width', 'height'].forEach(p => widget.style.removeProperty(p));
+      } else {
+        widget.style.setProperty('height', 'auto', 'important');
+      }
     } else {
-      if (lastSavedSize) {
+      if (mobile) {
+        // Remove inline height so media query restores 55vh
+        widget.style.removeProperty('height');
+      } else if (lastSavedSize) {
         widget.style.setProperty('height', lastSavedSize.h + 'px', 'important');
       } else {
         widget.style.removeProperty('height');
@@ -615,34 +653,56 @@
   const maxBtn = widget.querySelector('#emcss-maximize');
   maxBtn.addEventListener('click', e => {
     e.stopPropagation();
+    // Un-minimize first if needed
+    if (minimized) {
+      minimized = false;
+      widget.classList.remove('emcss--minimized');
+      if (lastSavedSize) {
+        widget.style.setProperty('height', lastSavedSize.h + 'px', 'important');
+      } else {
+        widget.style.removeProperty('height');
+      }
+    }
     maximized = !maximized;
     widget.classList.toggle('emcss--maximized', maximized);
     maxBtn.title = maximized ? 'Restore' : 'Maximize';
     maxBtn.innerHTML = maximized ? '&#10064;' : '&#9633;';
+    const mobile = window.innerWidth <= 768;
     if (maximized) {
       const rect = widget.getBoundingClientRect();
       preMaxRect = { x: rect.left, y: rect.top, w: rect.width, h: rect.height };
-      widget.style.setProperty('left',   '0',     'important');
-      widget.style.setProperty('top',    '0',     'important');
-      widget.style.setProperty('right',  'auto',  'important');
-      widget.style.setProperty('width',  '100vw', 'important');
-      widget.style.setProperty('height', '100vh', 'important');
+      if (mobile) {
+        // On mobile, only override height — media query handles position/width
+        widget.style.setProperty('height', '100vh', 'important');
+      } else {
+        widget.style.setProperty('left',   '0',     'important');
+        widget.style.setProperty('top',    '0',     'important');
+        widget.style.setProperty('right',  'auto',  'important');
+        widget.style.setProperty('width',  '100vw', 'important');
+        widget.style.setProperty('height', '100vh', 'important');
+      }
     } else {
       const r = preMaxRect;
       preMaxRect = null;
-      if (r) {
+      if (mobile) {
+        // On mobile, just remove the height override — media query restores 55vh
+        widget.style.removeProperty('height');
+      } else if (r) {
         widget.style.setProperty('left',   r.x + 'px', 'important');
         widget.style.setProperty('top',    r.y + 'px', 'important');
         widget.style.setProperty('width',  r.w + 'px', 'important');
         widget.style.setProperty('height', r.h + 'px', 'important');
+        widget.style.removeProperty('right');
       } else if (lastSavedPos && lastSavedSize) {
         widget.style.setProperty('left',   lastSavedPos.x + 'px', 'important');
         widget.style.setProperty('top',    lastSavedPos.y + 'px', 'important');
         widget.style.setProperty('width',  lastSavedSize.w + 'px', 'important');
         widget.style.setProperty('height', lastSavedSize.h + 'px', 'important');
+        widget.style.removeProperty('right');
       } else {
         widget.style.removeProperty('left');
         widget.style.removeProperty('top');
+        widget.style.removeProperty('right');
         widget.style.removeProperty('width');
         widget.style.removeProperty('height');
       }
@@ -685,15 +745,15 @@
 
   // ── Gemini AI ─────────────────────────────────────────────────────────────
   const GEMINI_SYSTEM_PROMPT = `You are a Senior CSS Engineer working inside the Enhanced Magic CSS browser extension — a live CSS/SCSS editor for Luxury Presence real estate website templates.
-Your responsibilities:
-- Diagnose CSS layout and styling issues from HTML structure and existing SCSS.
-- Suggest and apply precise, production-ready fixes.
-- Return ONLY valid SCSS code. No explanations, no markdown code fences (no \`\`\`scss), no prose — only the code itself.
-- The code is pasted directly into a live editor and applied to the page immediately.
-- When modifying existing styles, preserve the existing structure and only change or add what is necessary.
-- Use SCSS nesting and & parent references where appropriate.
-- Target the provided selector as the root scope when one is given.
-- Prefer minimal, surgical changes over full rewrites unless a rewrite is explicitly requested.`;
+
+STRICT RULES — follow these without exception:
+1. ONLY use class names, IDs, and element types that are explicitly present in the [HTML CONTEXT] provided. Never invent, assume, or guess class names. If a class you need does not appear in the HTML, say so instead of making one up.
+2. Return ONLY valid SCSS code. No explanations, no markdown code fences (no \`\`\`scss or \`\`\`css), no prose — only raw SCSS code.
+3. The code is pasted directly into a live editor and applied to the page immediately — it must work on the first try.
+4. Preserve the existing [CURRENT CSS] structure. Only add or change what the task requires. Do not remove unrelated rules.
+5. Use SCSS nesting and & parent references where appropriate.
+6. Prefer minimal, surgical changes over full rewrites unless a rewrite is explicitly requested.
+7. When a [SELECTOR SCOPE] is given, do NOT wrap output in that selector — write only the inner rules.`;
 
   function getGeminiKey(cb) {
     chrome.storage.local.get(['emcss_gemini_key'], d => cb(d.emcss_gemini_key || ''));
@@ -706,44 +766,63 @@ Your responsibilities:
   }
 
   function gatherPageContext() {
-    const sections = Array.from(document.querySelectorAll('section, [id^="section-"]'))
-      .filter(el => !el.closest('#__emcss_widget__'))
-      .slice(0, 20);
-    if (!sections.length) return '';
+    const clone = document.body.cloneNode(true);
 
-    // Clone each section, strip noisy nodes (scripts, SVGs, images src, styles)
-    // so we send real class-name-rich HTML without wasting tokens on binary data
-    const stripped = sections.map(el => {
-      const clone = el.cloneNode(true);
-      clone.querySelectorAll('script, style, noscript').forEach(n => n.remove());
-      clone.querySelectorAll('svg').forEach(n => { n.innerHTML = ''; n.setAttribute('aria-hidden', 'true'); });
-      clone.querySelectorAll('img').forEach(n => {
-        n.removeAttribute('src'); n.removeAttribute('srcset'); n.removeAttribute('data-src');
-      });
-      clone.querySelectorAll('*').forEach(n => {
-        ['style', 'onclick', 'onload', 'data-uw-rm-brl', 'data-uw-original-href',
-         'data-uw-rm-heading', 'aria-label'].forEach(a => n.removeAttribute(a));
-      });
-      return clone.outerHTML;
-    }).join('\n\n');
+    // Remove the widget itself so it doesn't pollute context
+    const widgetEl = clone.querySelector('#__emcss_widget__');
+    if (widgetEl) widgetEl.remove();
 
-    const MAX = 14000;
-    return 'Full HTML of all page sections (scripts/images stripped for brevity):\n' +
-      (stripped.length > MAX ? stripped.slice(0, MAX) + '\n…(truncated)' : stripped);
+    // Strip elements that add noise without class/structure value
+    clone.querySelectorAll('script, style, noscript, link, meta').forEach(n => n.remove());
+
+    // Collapse SVGs to a placeholder — preserve the element so class names on wrappers stay
+    clone.querySelectorAll('svg').forEach(n => { n.innerHTML = ''; });
+
+    // Strip image binary data but keep the element so alt/class context stays
+    clone.querySelectorAll('img, source, video').forEach(n => {
+      ['src', 'srcset', 'data-src', 'poster'].forEach(a => n.removeAttribute(a));
+    });
+
+    // Strip noisy attributes that waste tokens without helping Gemini
+    const NOISY_ATTRS = [
+      'style', 'onclick', 'onload', 'onerror',
+      'data-uw-rm-brl', 'data-uw-original-href', 'data-uw-rm-heading',
+      'data-uw-rm-form', 'data-gramm', 'data-gramm_editor',
+      'aria-describedby', 'aria-controls', 'tabindex',
+      'data-slick-index', 'aria-hidden', 'aria-live',
+    ];
+    clone.querySelectorAll('*').forEach(n => {
+      NOISY_ATTRS.forEach(a => n.removeAttribute(a));
+      // Drop long href/data-* values (CDN URLs, base64) to save tokens
+      if (n.hasAttribute('href') && n.getAttribute('href').length > 80) n.setAttribute('href', '…');
+    });
+
+    // Collapse text nodes to single-line — keep enough to understand content type
+    clone.querySelectorAll('p, h1, h2, h3, h4, h5, h6, span, li, a, button').forEach(n => {
+      if (n.children.length === 0) {
+        const t = n.textContent.trim();
+        if (t.length > 60) n.textContent = t.slice(0, 60) + '…';
+      }
+    });
+
+    const raw = clone.innerHTML;
+    const MAX = 18000;
+    return 'Full page HTML (scripts/images/styles stripped — class names and structure intact):\n' +
+      (raw.length > MAX ? raw.slice(0, MAX) + '\n…(truncated)' : raw);
   }
 
   async function streamGemini(apiKey, userText, onChunk, onDone, onError) {
     let res;
     try {
       res = await fetch(
-        `https://generativelanguage.googleapis.com/v1alpha/models/gemini-3-flash-preview:streamGenerateContent?key=${encodeURIComponent(apiKey)}&alt=sse`,
+        `https://generativelanguage.googleapis.com/v1alpha/models/${geminiModel}:streamGenerateContent?key=${encodeURIComponent(apiKey)}&alt=sse`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [{ role: 'user', parts: [{ text: userText }] }],
             systemInstruction: { parts: [{ text: GEMINI_SYSTEM_PROMPT }] },
-            generationConfig: { temperature: 0.2, maxOutputTokens: 4096 },
+            generationConfig: { temperature: 0.1, maxOutputTokens: 4096 },
           }),
         }
       );
@@ -794,17 +873,28 @@ Your responsibilities:
       const htmlCtx     = gatherHtmlContext(sectionEl);
 
       const parts = [];
+
       if (selector) {
-        parts.push(`Selector scope: ${selector}\nIMPORTANT: Do NOT wrap your output in this selector. The editor already applies it as the outer scope. Write only the inner rules.`);
+        parts.push(`[SELECTOR SCOPE]\n${selector}\nDo NOT wrap output in this selector — write only the inner rules. The editor already applies it as the outer scope.`);
+      } else {
+        parts.push(`[FORMAT MODE]\n${fmtMode.toUpperCase()} — generate selectors in ${fmtMode === 'bem' ? 'BEM style using & nesting (e.g. &__element, &--modifier)' : 'standard SCSS nesting with full class names'}.`);
+      }
+
+      if (htmlCtx) {
+        parts.push(`[HTML CONTEXT]\nOnly use class names, IDs, and element types found in this HTML. Do not invent any class names.\n${htmlCtx}`);
       } else {
         const pageCtx = gatherPageContext();
-        if (pageCtx) parts.push(pageCtx);
-        parts.push(`Format mode: ${fmtMode.toUpperCase()} — generate selectors in ${fmtMode === 'bem' ? 'BEM style using & nesting (e.g. &__element, &--modifier)' : 'standard SCSS nesting with full class names'}.`);
+        if (pageCtx) parts.push(`[HTML CONTEXT]\nOnly use class names, IDs, and element types found in this HTML. Do not invent any class names.\n${pageCtx}`);
       }
-      parts.push(currentCode ? `Current SCSS:\n${currentCode}` : 'Current SCSS: (empty — write fresh styles)');
-      if (htmlCtx) parts.push(`HTML structure of this section:\n${htmlCtx}`);
-      parts.push(`Task: ${promptText}`);
-      const userText = parts.join('\n\n');
+
+      parts.push(currentCode
+        ? `[CURRENT CSS]\n${currentCode}`
+        : '[CURRENT CSS]\n(empty — write fresh styles)'
+      );
+
+      parts.push(`[TASK]\n${promptText}`);
+
+      const userText = parts.join('\n\n---\n\n');
 
       // Save undo snapshot before writing
       undoStack.push(targetEditor.value);
@@ -879,19 +969,28 @@ Your responsibilities:
     const mh = rect.height + mt + mb;
 
     const fmt = n => Number.isInteger(n) ? n : +n.toFixed(1);
+    const lbl  = n => n === 0 ? '-' : String(fmt(n));
     const tipText = `${fmt(rect.width)} × ${fmt(rect.height)}`;
-    const tipY = rect.bottom + 6 < window.innerHeight - 24 ? rect.bottom + 6 : rect.top - 24;
-    const tipX = Math.min(Math.max(rect.left + rect.width / 2, 60), window.innerWidth - 60);
+    const ls = 'position:absolute;display:flex;align-items:center;justify-content:center;font:9px/1 monospace;color:rgba(0,0,0,0.85);overflow:hidden;pointer-events:none;';
 
     boxModelEl.innerHTML = `
 <div style="position:fixed;left:${mx}px;top:${my}px;width:${mw}px;height:${mh}px;background:rgba(246,178,107,0.35);box-sizing:border-box;">
+  <span style="${ls}left:0;right:0;top:0;height:${mt}px;">${lbl(mt)}</span>
+  <span style="${ls}left:0;right:0;bottom:0;height:${mb}px;">${lbl(mb)}</span>
+  <span style="${ls}top:0;bottom:0;left:0;width:${ml}px;">${lbl(ml)}</span>
+  <span style="${ls}top:0;bottom:0;right:0;width:${mr}px;">${lbl(mr)}</span>
   <div style="position:absolute;left:${ml}px;top:${mt}px;right:${mr}px;bottom:${mb}px;background:rgba(255,229,153,0.35);box-sizing:border-box;">
     <div style="position:absolute;left:${bl}px;top:${bt}px;right:${br}px;bottom:${bb}px;background:rgba(147,196,125,0.35);box-sizing:border-box;">
-      <div style="position:absolute;left:${pl}px;top:${pt}px;right:${pr}px;bottom:${pb}px;background:rgba(111,168,220,0.35);"></div>
+      <span style="${ls}left:0;right:0;top:0;height:${pt}px;">${lbl(pt)}</span>
+      <span style="${ls}left:0;right:0;bottom:0;height:${pb}px;">${lbl(pb)}</span>
+      <span style="${ls}top:0;bottom:0;left:0;width:${pl}px;">${lbl(pl)}</span>
+      <span style="${ls}top:0;bottom:0;right:0;width:${pr}px;">${lbl(pr)}</span>
+      <div style="position:absolute;left:${pl}px;top:${pt}px;right:${pr}px;bottom:${pb}px;background:rgba(111,168,220,0.35);display:flex;align-items:center;justify-content:center;overflow:hidden;">
+        <span style="font:11px/1.6 sans-serif;background:#0f172a;color:#94a3b8;padding:1px 8px;border-radius:3px;border:1px solid #2a3447;white-space:nowrap;flex-shrink:0;">${tipText}</span>
+      </div>
     </div>
   </div>
-</div>
-<div style="position:fixed;left:${tipX}px;top:${tipY}px;transform:translateX(-50%);font:11px/1.6 sans-serif;background:#0f172a;color:#94a3b8;padding:1px 8px;border-radius:3px;border:1px solid #2a3447;white-space:nowrap;">${tipText}</div>`;
+</div>`;
 
     boxModelEl.style.display = 'block';
   }
@@ -1846,8 +1945,10 @@ Your responsibilities:
   });
 
   // ── Helper: toggle line/block comment ─────────────────────────────────────
-  function toggleComment(start, end) {
-    const val = editor.value;
+  function toggleComment(start, end, targetEditor, afterFn) {
+    const el  = targetEditor || editor;
+    const cb  = afterFn      || afterEdit;
+    const val = el.value;
     let from = start, to = end;
     if (start === end) {
       from = val.lastIndexOf('\n', start - 1) + 1;
@@ -1861,10 +1962,10 @@ Your responsibilities:
     } else {
       newText = '/* ' + text.trim() + ' */';
     }
-    editor.value = val.slice(0, from) + newText + val.slice(to);
-    editor.selectionStart = from;
-    editor.selectionEnd   = from + newText.length;
-    afterEdit();
+    el.value = val.slice(0, from) + newText + val.slice(to);
+    el.selectionStart = from;
+    el.selectionEnd   = from + newText.length;
+    cb();
   }
 
   // ── Helper: indent/unindent selected lines ─────────────────────────────────
@@ -2170,14 +2271,19 @@ Your responsibilities:
       widget.style.setProperty('bottom', '0',     'important');
       widget.style.setProperty('top',    'auto',  'important');
       widget.style.setProperty('width',  '100%',  'important');
+      // Clear any desktop-set inline height so media query (55vh / auto when minimized) takes over
+      if (!maximized) widget.style.removeProperty('height');
     } else {
       // Restore desktop/tablet position — clear all mobile-forced styles first
       widget.style.removeProperty('bottom');
       widget.style.removeProperty('right');
       widget.style.removeProperty('width');
-      if (lastSavedSize) {
+      if (lastSavedSize && !maximized) {
         widget.style.setProperty('width',  lastSavedSize.w + 'px', 'important');
-        widget.style.setProperty('height', lastSavedSize.h + 'px', 'important');
+        // Don't override height when minimized — that state manages height itself
+        if (!minimized) {
+          widget.style.setProperty('height', lastSavedSize.h + 'px', 'important');
+        }
       }
       if (lastSavedPos) {
         widget.style.setProperty('left',  lastSavedPos.x + 'px', 'important');
@@ -2227,14 +2333,15 @@ Your responsibilities:
       { name: 'Featured Testimonials',          findBy: '.testimonials-section',                       depth: 1, buildCode: '' },
       { name: 'Press Logo Carousel',            findBy: '.press-carousel-component',                   depth: 1, buildCode: '' },
       { name: 'Gallery Style Menu',             findBy: '.gallery-component',                          depth: 1, buildCode: '' },
+      { name: 'Video Gallery',                  findBy: '.video-gallery.redesign',                     depth: 1, buildCode: '' },
       { name: 'Newsletter Sign Up',             findBy: '.newsletter-signup',                          depth: 1, buildCode: '' },
       { name: 'Featured Properties',            findBy: '.featured-properties',                        depth: 1, buildCode: '' },
       { name: 'Featured Neighborhoods',         findBy: '.featured-neighborhoods',                     depth: 1, buildCode: '' },
       { name: 'Instant Home Valuation',         findBy: '.home-valuation',                             depth: 0, buildCode: '' },
       { name: 'Team Grid',                       findBy: '.lp-vertical-paddings:has(ul.data-container:not(.collection))', depth: 1, buildCode: '' },
-      { name: 'Properties Grid',                 findBy: '.section:has(div.data-container:not(.collection))',   depth: 1, buildCode: '' },
-      { name: 'MLS Properties Grid with Filters',findBy: '.properties-grid',                                    depth: 1, buildCode: '' },
-      { name: 'Blog Grid',                      findBy: '.section:has(div.collection.data-container)',          depth: 1, buildCode: '' },
+      { name: 'Properties Grid',                 findBy: '.section:has(.data-container .bf2)',                  depth: 1, buildCode: '' },
+      { name: 'MLS Properties Grid with Filters',findBy: '.properties-grid:not(:has(.jsPropertiesCarousel))',   depth: 1, buildCode: '' },
+      { name: 'Blog Grid',                      findBy: '.section:has(.collection.data-container):not(:has(.bf2))', depth: 1, buildCode: '' },
       { name: 'Blog Intro - Full Bleed',        findBy: '.section:has(.share-holder)',                         depth: 1, buildCode: '' },
       { name: 'Blog Content',                   findBy: '.section:has(.lp-a.description)',                     depth: 1, buildCode: '' },
       { name: 'Featured Blogs',                 findBy: '.lp-vertical-paddings:has(.js-slick)',        depth: 1, buildCode: '' },
@@ -2244,6 +2351,8 @@ Your responsibilities:
       { name: 'Property Neighborhood',           findBy: '.section:has(.neighborhood-wrap)',            depth: 1, buildCode: '' },
       { name: 'Property Agent',                  findBy: '.agent.lp-vertical-paddings',                 depth: 1, buildCode: '' },
       { name: 'Features & Amenities',            findBy: '.section:has(.amenities-list-box)',           depth: 1, buildCode: '' },
+      { name: 'Schedule a Showing',              findBy: '.schedule.section.redesign',                  depth: 1, buildCode: '' },
+      { name: 'Property Mortgage Calculator',    findBy: '.mg-calc.redesign',                           depth: 1, buildCode: '' },
       { name: 'CTA Block',                       findBy: '.cta-block',                                  depth: 2, buildCode: '' },
       { name: 'Featured Video',                 findBy: '.section-video',                              depth: 1, buildCode: '' },
       { name: 'Neighborhood Intro - Full Bleed', findBy: '.section:has(.image-wrap):not(:has(.agent-details))', depth: 1, buildCode: '' },
@@ -2300,7 +2409,8 @@ Your responsibilities:
       { name: 'Gallery Style Menu',                 findBy: '.gallery-component',            depth: 1, buildCode: '' },
       { name: 'Timeline',                           findBy: '.lp-container.lp-vertical-paddings.redesign:has(> ul.collection)', depth: 1, buildCode: '' },
       { name: 'Neighborhood Intro',                 findBy: '.image-page-introduction-container', depth: 1, buildCode: '' },
-      { name: 'MLS Properties Grid with Filters',   findBy: '.properties-grid.lp-vertical-paddings', depth: 1, buildCode: '' },
+      { name: 'MLS Properties Grid with Filters',   findBy: '.properties-grid.lp-vertical-paddings:not(:has(.jsPropertiesCarousel))', depth: 1, buildCode: '' },
+      { name: 'MLS Properties Slider',              findBy: '.properties-grid:has(.jsPropertiesCarousel)',                            depth: 1, buildCode: '' },
       { name: 'Neighborhood MLS Geolocation CTA',   findBy: '.wrapper.redesign',              depth: 1, buildCode: '' },
       { name: 'Neighborhood Overview',              findBy: '.section:has(.item__icon-population)', depth: 1, buildCode: '' },
       { name: 'Neighborhood Points of Interest & Commute', findBy: '.lp-vertical-paddings:has(.poi-title)', depth: 1, buildCode: '' },
@@ -2759,13 +2869,19 @@ Your responsibilities:
     });
   });
 
-  // Load saved Gemini key into settings input
-  const geminiKeyInput = widget.querySelector('#emcss-gemini-key');
-  const geminiSaveBtn  = widget.querySelector('#emcss-gemini-save');
-  getGeminiKey(key => { if (geminiKeyInput && key) geminiKeyInput.value = key; });
+  // Load saved Gemini key + model into settings inputs
+  let geminiModel = 'gemini-3-flash-preview';
+  const geminiKeyInput   = widget.querySelector('#emcss-gemini-key');
+  const geminiModelSel   = widget.querySelector('#emcss-gemini-model');
+  const geminiSaveBtn    = widget.querySelector('#emcss-gemini-save');
+  chrome.storage.local.get(['emcss_gemini_key', 'emcss_gemini_model'], d => {
+    if (d.emcss_gemini_key)   geminiKeyInput.value  = d.emcss_gemini_key;
+    if (d.emcss_gemini_model) { geminiModel = d.emcss_gemini_model; geminiModelSel.value = geminiModel; }
+  });
   geminiSaveBtn.addEventListener('click', () => {
-    const key = geminiKeyInput.value.trim();
-    chrome.storage.local.set({ emcss_gemini_key: key }, () => {
+    const key   = geminiKeyInput.value.trim();
+    geminiModel = geminiModelSel.value;
+    chrome.storage.local.set({ emcss_gemini_key: key, emcss_gemini_model: geminiModel }, () => {
       geminiSaveBtn.textContent = 'Saved!';
       setTimeout(() => { geminiSaveBtn.textContent = 'Save Key'; }, 1500);
     });
@@ -3252,6 +3368,23 @@ Your responsibilities:
         return 'emcss_bld_' + templateName + '_' + item.defName + '_' + globalMoodSel.value.replace(/\s+/g, '_');
       }
 
+      // Per-element undo/redo stack
+      let elUndoStack = [''];
+      let elRedoStack = [];
+      function elUndo() {
+        if (elUndoStack.length <= 1) return;
+        elRedoStack.push(elUndoStack.pop());
+        elEditor.value = elUndoStack[elUndoStack.length - 1];
+        syncLines();
+      }
+      function elRedo() {
+        if (!elRedoStack.length) return;
+        const val = elRedoStack.pop();
+        elUndoStack.push(val);
+        elEditor.value = val;
+        syncLines();
+      }
+
       function loadBuildCode() {
         const key = moodboardStorageKey();
         chrome.storage.local.get([key], (data) => {
@@ -3374,6 +3507,8 @@ Your responsibilities:
       elEditor.addEventListener('click',  acHide);
       elEditor.addEventListener('scroll', () => { linesDiv.scrollTop = elEditor.scrollTop; });
       elEditor.addEventListener('input',  () => {
+        elUndoStack.push(elEditor.value);
+        elRedoStack.length = 0;
         syncLines();
         acUpdate();
         clearTimeout(elApplyTimer);
@@ -3395,6 +3530,20 @@ Your responsibilities:
         // Ctrl/Cmd+S → save/apply
         if ((e.ctrlKey || e.metaKey) && e.key === 's') {
           e.preventDefault(); actionBtn.click(); return;
+        }
+        // Ctrl/Cmd+Z → undo
+        if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+          e.preventDefault(); elUndo(); return;
+        }
+        // Ctrl/Cmd+Shift+Z or Ctrl+Y → redo
+        if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'z'))) {
+          e.preventDefault(); elRedo(); return;
+        }
+        // Ctrl/Cmd+/ → toggle line comment
+        if ((e.ctrlKey || e.metaKey) && e.key === '/') {
+          e.preventDefault();
+          toggleComment(elEditor.selectionStart, elEditor.selectionEnd, elEditor, syncLines);
+          return;
         }
         // Tab without autocomplete → indent
         if (e.key === 'Tab') {

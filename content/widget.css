@@ -766,6 +766,12 @@
     resize: none !important;
   }
 
+  #__emcss_widget__.emcss--minimized {
+    height: auto !important;
+    min-height: 0 !important;
+    border-radius: 12px 12px 0 0 !important;
+  }
+
   #__emcss_widget__ .emcss__header {
     cursor: default !important;
   }
@@ -779,6 +785,11 @@
 @media (max-width: 375px) {
   #__emcss_widget__ {
     height: 50vh !important;
+  }
+
+  #__emcss_widget__.emcss--minimized {
+    height: auto !important;
+    min-height: 0 !important;
   }
 
   #__emcss_widget__ .emcss__btn {
