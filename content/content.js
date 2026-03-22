@@ -6,6 +6,29 @@
 (function () {
   if (window.__emcss) { window.__emcss.show(); return; }
 
+  // ── CMS mode detection ────────────────────────────────────────────────────
+  const IS_CMS = location.hostname === 'app.luxurypresence.com';
+
+  // ── Monaco bridge (CMS only) ──────────────────────────────────────────────
+  // Monaco renders text visually but captures input via a hidden <textarea
+  // class="inputarea">. We focus it, select all, then use execCommand('insertText')
+  // which fires the beforeinput/input events Monaco listens to — no background
+  // worker or script injection needed.
+  function cmsWrite(text) {
+    const inputArea = document.querySelector('.inputarea.monaco-mouse-cursor-text');
+    if (!inputArea) {
+      return Promise.resolve({ ok: false, msg: 'Monaco inputarea not found — is the Advanced CSS panel open?' });
+    }
+    try {
+      inputArea.focus();
+      document.execCommand('selectAll');
+      const ok = document.execCommand('insertText', false, text);
+      return Promise.resolve({ ok: ok !== false, count: 1 });
+    } catch (e) {
+      return Promise.resolve({ ok: false, msg: e.message });
+    }
+  }
+
   // ── Build widget DOM ──────────────────────────────────────────────────────
   const widget = document.createElement('div');
   widget.id = '__emcss_widget__';
@@ -37,17 +60,20 @@
 
       <div class="emcss__editor-wrap">
         <div class="emcss__line-numbers" id="emcss-lines">1</div>
-        <textarea
-          class="emcss__editor"
-          id="emcss-editor"
-          spellcheck="false"
-          autocorrect="off"
-          autocapitalize="off"
-          data-gramm="false"
-          data-gramm_editor="false"
-          data-enable-grammarly="false"
-          placeholder=".hero {&#10;  background: #fff;&#10;  padding: 40px;&#10;  h1 { font-size: 2rem; }&#10;}"
-        ></textarea>
+        <div class="emcss__editor-inner">
+          <div class="emcss__highlight" id="emcss-highlight" aria-hidden="true"></div>
+          <textarea
+            class="emcss__editor"
+            id="emcss-editor"
+            spellcheck="false"
+            autocorrect="off"
+            autocapitalize="off"
+            data-gramm="false"
+            data-gramm_editor="false"
+            data-enable-grammarly="false"
+            placeholder=".hero {&#10;  background: #fff;&#10;  padding: 40px;&#10;  h1 { font-size: 2rem; }&#10;}"
+          ></textarea>
+        </div>
       </div>
 
       <div class="emcss__toolbar">
@@ -339,7 +365,117 @@
     return 'CSS';
   }
 
+  // ── Syntax highlighter ────────────────────────────────────────────────────
+  function highlightCSS(text) {
+    const e = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const sp = (cls, s) => '<span class="hl-'+cls+'">'+s+'</span>';
+    let out = '', i = 0, depth = 0, inValue = false;
+    const n = text.length;
+
+    while (i < n) {
+      const c = text[i];
+
+      // Block comment /* ... */
+      if (c === '/' && text[i+1] === '*') {
+        const end = text.indexOf('*/', i+2);
+        const tok = end < 0 ? text.slice(i) : text.slice(i, end+2);
+        out += sp('cm', e(tok)); i += tok.length; inValue = false; continue;
+      }
+      // Line comment //
+      if (c === '/' && text[i+1] === '/') {
+        const nl = text.indexOf('\n', i);
+        const tok = nl < 0 ? text.slice(i) : text.slice(i, nl);
+        out += sp('cm', e(tok)); i += tok.length; continue;
+      }
+      // Strings
+      if (c === '"' || c === "'") {
+        let j = i+1;
+        while (j < n && text[j] !== c) { if (text[j]==='\\') j++; j++; }
+        out += sp('st', e(text.slice(i, j+1))); i = j+1; continue;
+      }
+      // @rule
+      if (c === '@') {
+        const m = text.slice(i).match(/^@[\w-]+/);
+        if (m) { out += sp('at', e(m[0])); i += m[0].length; continue; }
+      }
+      // $variable
+      if (c === '$') {
+        const m = text.slice(i).match(/^\$[\w-]+/);
+        if (m) { out += sp('va', e(m[0])); i += m[0].length; continue; }
+      }
+      // & parent selector
+      if (c === '&') { out += sp('am', '&amp;'); i++; continue; }
+      // { open brace
+      if (c === '{') { depth++; inValue = false; out += sp('pu', '{'); i++; continue; }
+      // } close brace
+      if (c === '}') { depth = Math.max(0, depth-1); inValue = false; out += sp('pu', '}'); i++; continue; }
+      // ; end of declaration
+      if (c === ';') { inValue = false; out += sp('pu', ';'); i++; continue; }
+      // , comma
+      if (c === ',') { out += sp('pu', ','); i++; continue; }
+      // % placeholder selector
+      if (c === '%') {
+        const m = text.slice(i).match(/^%[\w-]+/);
+        if (m) { out += sp('sl', e(m[0])); i += m[0].length; continue; }
+      }
+      // # hex color or ID selector
+      if (c === '#') {
+        const mhex = text.slice(i).match(/^#([0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{4}|[0-9a-fA-F]{3})(?![0-9a-fA-F\w])/);
+        if (mhex) { out += sp('hx', e(mhex[0])); i += mhex[0].length; continue; }
+        const mid = text.slice(i).match(/^#[\w-]+/);
+        if (mid) { out += sp('sl', e(mid[0])); i += mid[0].length; continue; }
+      }
+      // . class selector
+      if (c === '.') {
+        const m = text.slice(i).match(/^\.[\w-]+/);
+        if (m) { out += sp('sl', e(m[0])); i += m[0].length; continue; }
+      }
+      // : colon — pseudo or property separator
+      if (c === ':') {
+        if (text[i+1] === ':') {
+          const m = text.slice(i).match(/^::[\w-]+/);
+          if (m) { out += sp('ps', e(m[0])); i += m[0].length; continue; }
+        }
+        if (!inValue) {
+          const m = text.slice(i).match(/^:[\w-]+/);
+          if (m) { out += sp('ps', e(m[0])); i += m[0].length; continue; }
+        }
+        inValue = true; out += sp('pu', ':'); i++; continue;
+      }
+      // ! for !important
+      if (c === '!') { out += sp('im', '!'); i++; continue; }
+      // Number with optional units (check before word so -1px works)
+      if (/\d/.test(c) || (c === '-' && /\d/.test(text[i+1]||''))) {
+        const m = text.slice(i).match(/^-?\d+\.?\d*(?:px|em|rem|vw|vh|vmin|vmax|svh|dvh|lvh|fr|ch|ex|s|ms|deg|turn|grad|rad|%|pt|pc|cm|mm|in)?\b/);
+        if (m) { out += sp('nu', e(m[0])); i += m[0].length; continue; }
+      }
+      // Word / identifier (properties, values, element selectors, vendor prefixes, custom props)
+      if (/[a-zA-Z_]/.test(c) || (c === '-' && /[a-zA-Z_-]/.test(text[i+1]||''))) {
+        const m = text.slice(i).match(/^-{0,2}[a-zA-Z_][\w-]*/);
+        if (m) {
+          const word = m[0];
+          const rest = text.slice(i + word.length);
+          const wsLen = rest.match(/^(\s*)/)[0].length;
+          const nextCh = rest[wsLen];
+          if (depth > 0 && !inValue && nextCh === ':' && rest[wsLen+1] !== ':') {
+            out += sp('pr', e(word)); // CSS property
+          } else if (inValue) {
+            out += word === 'important' ? sp('im', e(word)) : sp('vl', e(word));
+          } else {
+            out += e(word); // element selector / default
+          }
+          i += word.length; continue;
+        }
+      }
+      // Default — pass through (whitespace, operators, combinators)
+      out += e(c); i++;
+    }
+    return out;
+  }
+
   // ── UI helpers ────────────────────────────────────────────────────────────
+  const highlightEl = widget.querySelector('#emcss-highlight');
+
   function updateLineNumbers() {
     const count = editor.value.split('\n').length;
     linesEl.textContent = Array.from({ length: count }, (_, i) => i + 1).join('\n');
@@ -351,11 +487,16 @@
     cursorEl.textContent = 'Ln ' + txt.length + ', Col ' + (txt[txt.length - 1].length + 1);
   }
 
+  function updateHighlight() {
+    highlightEl.innerHTML = highlightCSS(editor.value);
+    highlightEl.scrollTop  = editor.scrollTop;
+    highlightEl.scrollLeft = editor.scrollLeft;
+  }
 
   function updateAll() {
     updateLineNumbers();
     updateCursor();
-
+    updateHighlight();
     modeBadge.textContent = detectMode(editor.value);
   }
 
@@ -715,10 +856,162 @@
   widget.querySelector('#emcss-format').addEventListener('click', formatCode);
 
   function syncApplyBtn() {
-    applyBtn.style.display = autoChk.checked ? 'none' : '';
+    applyBtn.style.display = (!IS_CMS && autoChk.checked) ? 'none' : '';
   }
   autoChk.addEventListener('change', () => { save(); syncApplyBtn(); });
   syncApplyBtn();
+
+  // ── CMS mode UI ───────────────────────────────────────────────────────────
+  if (IS_CMS) {
+    modeBadge.textContent = 'CMS';
+    modeBadge.style.setProperty('background', '#7c3aed', 'important');
+    modeBadge.style.setProperty('color', '#fff', 'important');
+    statusEl.textContent = 'CMS Mode \u2014 LP Website Builder';
+    autoChk.checked = false;
+    autoChk.closest('label').style.display = 'none';
+    applyBtn.style.display = 'none';
+    widget.querySelector('#emcss-hover').style.display = 'none';
+
+    // ── CMS setup bar: template + moodboard selectors ─────────────────────
+    const cmsBar = document.createElement('div');
+    cmsBar.className = 'emcss__cms-bar';
+    cmsBar.innerHTML = `
+      <select class="emcss__el-select" id="emcss-cms-tpl">
+        <option value="">&#8212; Template &#8212;</option>
+        <option value="Masterpiece">Masterpiece</option>
+        <option value="Producer">Producer</option>
+        <option value="Visionary">Visionary</option>
+      </select>
+      <select class="emcss__el-select" id="emcss-cms-mood">
+        <option value="${DEFAULT_MOODBOARD}">${DEFAULT_MOODBOARD}</option>
+      </select>`;
+    widget.querySelector('.emcss__editor-wrap').before(cmsBar);
+
+    const cmsTplSel  = cmsBar.querySelector('#emcss-cms-tpl');
+    const cmsMoodSel = cmsBar.querySelector('#emcss-cms-mood');
+
+    function refreshCmsMoods() {
+      const prev = cmsMoodSel.value;
+      const all  = [DEFAULT_MOODBOARD, ...moodboards];
+      cmsMoodSel.innerHTML = all.map(m => `<option value="${m}">${m}</option>`).join('');
+      if (prev && all.includes(prev)) cmsMoodSel.value = prev;
+    }
+
+    chrome.storage.local.get(['emcss_cms_tpl', 'emcss_cms_mood'], d => {
+      refreshCmsMoods();
+      if (d.emcss_cms_tpl) cmsTplSel.value = d.emcss_cms_tpl;
+      if (d.emcss_cms_mood) cmsMoodSel.value = d.emcss_cms_mood;
+    });
+    cmsTplSel.addEventListener('change',  () => chrome.storage.local.set({ emcss_cms_tpl:  cmsTplSel.value  }));
+    cmsMoodSel.addEventListener('change', () => chrome.storage.local.set({ emcss_cms_mood: cmsMoodSel.value }));
+
+    // ── Element detection ─────────────────────────────────────────────────
+    // TEMPLATES is defined later in the file — lazy-init to avoid ReferenceError
+    let cmsAllNames = null;
+    function getCmsAllNames() {
+      if (!cmsAllNames) {
+        cmsAllNames = [];
+        Object.values(TEMPLATES).forEach(tpl => tpl.forEach(el => cmsAllNames.push(el.name)));
+        cmsAllNames.sort((a, b) => b.length - a.length);
+      }
+      return cmsAllNames;
+    }
+
+    // ── Shift+hover+click element picker ─────────────────────────────────
+    // Hold Shift → hover over element name text in sidebar → green highlight
+    // Shift+click on highlighted name → look up code → copy to clipboard
+
+    function cmsNameFromEl(el) {
+      const names = getCmsAllNames();
+      let cur = el;
+      let depth = 0;
+      while (cur && cur !== document.body && depth++ < 12) {
+        let direct = '';
+        for (const node of cur.childNodes) {
+          if (node.nodeType === 3) direct += node.textContent;
+        }
+        direct = direct.trim();
+        if (direct) {
+          for (const name of names) {
+            if (direct === name) return name;
+          }
+        }
+        cur = cur.parentElement;
+      }
+      return null;
+    }
+
+    let cmsHoveredEl = null;
+    const CMS_HL = '2px solid #34d399';
+
+    function cmsClearHighlight() {
+      if (!cmsHoveredEl) return;
+      cmsHoveredEl.style.removeProperty('outline');
+      cmsHoveredEl.style.removeProperty('cursor');
+      cmsHoveredEl = null;
+    }
+
+    document.addEventListener('mousemove', e => {
+      if (!e.shiftKey) { cmsClearHighlight(); return; }
+      const name = cmsNameFromEl(e.target);
+      const newEl = name ? e.target : null;
+      if (newEl === cmsHoveredEl) return;
+      cmsClearHighlight();
+      if (newEl) {
+        newEl.style.setProperty('outline', CMS_HL, 'important');
+        newEl.style.setProperty('cursor', 'crosshair', 'important');
+        cmsHoveredEl = newEl;
+      }
+    }, true);
+
+    document.addEventListener('click', e => {
+      if (!e.shiftKey) return;
+      const name = cmsNameFromEl(e.target);
+      if (!name) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      const tpl  = cmsTplSel.value;
+      const mood = cmsMoodSel.value || DEFAULT_MOODBOARD;
+      if (!tpl) { setStatus('Select a template first', 'warning'); return; }
+
+      const key = 'emcss_bld_' + tpl + '_' + name + '_' + mood.replace(/\s+/g, '_');
+      chrome.storage.local.get([key], data => {
+        const code = data[key] || '';
+        if (!code) {
+          cmsToast('\u26a0\ufe0f No saved code for \u201c' + name + '\u201d', '#f59e0b');
+          setStatus('\u26a0 No saved code: ' + name + ' (' + tpl + ' / ' + mood + ')', 'warning');
+          return;
+        }
+        navigator.clipboard.writeText(code).then(() => {
+          cmsToast('\u2705 CSS loaded for \u201c' + name + '\u201d', '#34d399');
+          setStatus('\u2714 Copied: ' + name + ' \u2014 paste into Advanced CSS', 'success');
+        }).catch(() => {
+          editor.value = code; afterEdit();
+          cmsToast('\u2705 CSS loaded for \u201c' + name + '\u201d', '#34d399');
+          setStatus('\u2714 ' + name + ' loaded in editor (clipboard blocked)', 'success');
+        });
+      });
+    }, true);
+
+    // Small toast that appears at the top-center of the screen and fades out
+    function cmsToast(msg, color) {
+      const t = document.createElement('div');
+      t.textContent = msg;
+      t.style.cssText = [
+        'position:fixed', 'top:18px', 'left:50%', 'transform:translateX(-50%)',
+        'z-index:2147483647', 'background:#0f172a', 'color:' + color,
+        'border:1px solid ' + color, 'border-radius:8px',
+        'padding:10px 20px', 'font:600 13px/1.4 sans-serif',
+        'box-shadow:0 4px 24px rgba(0,0,0,0.5)',
+        'pointer-events:none', 'transition:opacity 0.4s ease',
+        'white-space:nowrap', 'opacity:1'
+      ].join(';');
+      document.body.appendChild(t);
+      setTimeout(() => { t.style.opacity = '0'; }, 1800);
+      setTimeout(() => { t.remove(); }, 2200);
+    }
+  }
 
   widget.querySelector('#emcss-copy').addEventListener('click', () => {
     if (!editor.value.trim()) return;
@@ -1237,12 +1530,20 @@ STRICT RULES — follow these without exception:
       if (undoStack.length > 200) undoStack.shift();
       redoStack = [];
     }
-    if (autoChk.checked) scheduleApply();
+    if (!IS_CMS && autoChk.checked) scheduleApply();
     save();
   }
 
   function applyCSS() {
     clearTimeout(applyTimer);
+    if (IS_CMS) {
+      cmsWrite(editor.value).then(result => {
+        if (result.ok) setStatus('Saved to CMS editor \u2714', 'success');
+        else setStatus('\u2718 ' + result.msg, 'error');
+      });
+      save();
+      return;
+    }
     const code = editor.value.trim();
     if (!code) {
       const el = document.getElementById('__emcss_injected__');
@@ -1792,7 +2093,11 @@ STRICT RULES — follow these without exception:
   // ── Editor events ─────────────────────────────────────────────────────────
   editor.addEventListener('input', () => { afterEdit(); acUpdate(); });
 
-  editor.addEventListener('scroll', () => { linesEl.scrollTop = editor.scrollTop; });
+  editor.addEventListener('scroll', () => {
+    linesEl.scrollTop      = editor.scrollTop;
+    highlightEl.scrollTop  = editor.scrollTop;
+    highlightEl.scrollLeft = editor.scrollLeft;
+  });
 
   editor.addEventListener('click',  () => { updateCursor(); acHide(); });
   editor.addEventListener('keyup',  updateCursor);
@@ -2071,6 +2376,10 @@ STRICT RULES — follow these without exception:
     const lineStart = val.lastIndexOf('\n', pos - 1) + 1;
     const line      = val.slice(lineStart, pos);
 
+    // @-rule snippet mode — must check first so `@med` doesn't fall into prop mode
+    const am = line.match(/@([-a-zA-Z]*)$/);
+    if (am) return { mode: 'atsnippet', partial: '@' + am[1] };
+
     // !important mode — must check BEFORE value mode so `color: red !` is caught here
     const im = line.match(/(!\w*)$/);
     if (im) return { mode: 'important', partial: im[1] };
@@ -2100,6 +2409,17 @@ STRICT RULES — follow these without exception:
   function acSuggest(ctx) {
     if (!ctx) return [];
 
+    if (ctx.mode === 'atsnippet') {
+      return [
+        '@media (max-width: 768px)',
+        '@media (min-width: 769px)',
+        '@keyframes',
+        '@mixin',
+        '@include',
+        '@import',
+      ].filter(s => s.startsWith(ctx.partial));
+    }
+
     if (ctx.mode === 'important') {
       return ['!important'].filter(v => v.startsWith(ctx.partial));
     }
@@ -2116,8 +2436,9 @@ STRICT RULES — follow these without exception:
     if (ctx.mode === 'value') {
       const vals    = CSS_VALUES[ctx.prop] || [];
       const partial = ctx.partial.trim(); // trim leading space from `prop: partial`
-      if (!partial) return vals.slice(0, 12);
-      return vals.filter(v => v.toLowerCase().startsWith(partial.toLowerCase())).slice(0, 12);
+      const varMatch = 'var()'.startsWith(partial.toLowerCase()) ? ['var()'] : [];
+      const valMatch = vals.filter(v => v.toLowerCase().startsWith(partial.toLowerCase()));
+      return [...varMatch, ...valMatch].slice(0, 12);
     }
 
     if (ctx.mode === 'prop') {
@@ -2209,7 +2530,23 @@ STRICT RULES — follow these without exception:
     let replaceFrom, insert, cursorOffset = null;
     const replaceTo = pos;
 
-    if (ctx.mode === 'important') {
+    if (ctx.mode === 'atsnippet') {
+      const m = line.match(/@[-a-zA-Z]*$/);
+      replaceFrom = lineStart + line.length - (m ? m[0].length : 0);
+      const indent = line.match(/^(\s*)/)[1];
+      // @keyframes and @mixin get a named block; @media queries get { \n } with cursor inside
+      if (chosen === '@keyframes' || chosen === '@mixin') {
+        insert = chosen + '  {\n' + indent + '  \n' + indent + '}';
+        cursorOffset = chosen.length + 1; // cursor after the space, before {
+      } else if (chosen === '@include' || chosen === '@import') {
+        insert = chosen + ' ';
+        cursorOffset = insert.length;
+      } else {
+        // @media blocks — cursor lands on the blank inner line
+        insert = chosen + ' {\n' + indent + '  \n' + indent + '}';
+        cursorOffset = chosen.length + 3 + indent.length + 2;
+      }
+    } else if (ctx.mode === 'important') {
       const m = line.match(/(!\w*)$/);
       replaceFrom = lineStart + line.length - (m ? m[1].length : 0);
       insert = chosen;
@@ -2350,7 +2687,7 @@ STRICT RULES — follow these without exception:
       { name: 'Property Intro',                  findBy: '.section:has(.holder):has(.js-collection)',  depth: 1, buildCode: '' },
       { name: 'Property Neighborhood',           findBy: '.section:has(.neighborhood-wrap)',            depth: 1, buildCode: '' },
       { name: 'Property Agent',                  findBy: '.agent.lp-vertical-paddings',                 depth: 1, buildCode: '' },
-      { name: 'Features & Amenities',            findBy: '.section:has(.amenities-list-box)',           depth: 1, buildCode: '' },
+      { name: 'Features & Amenities with Title',            findBy: '.section:has(.amenities-list-box)',           depth: 1, buildCode: '' },
       { name: 'Schedule a Showing',              findBy: '.schedule.section.redesign',                  depth: 1, buildCode: '' },
       { name: 'Property Mortgage Calculator',    findBy: '.mg-calc.redesign',                           depth: 1, buildCode: '' },
       { name: 'CTA Block',                       findBy: '.cta-block',                                  depth: 2, buildCode: '' },
@@ -2391,14 +2728,19 @@ STRICT RULES — follow these without exception:
       { name: 'Featured Neighborhoods - Full Bleed', findBy: '.featured-neighborhoods-grid:has(.image-holder > img)',  depth: 1, buildCode: '' },
       { name: 'Newsletter Sign Up',                 findBy: '.newsletter-signup',            depth: 1, buildCode: '' },
       { name: 'Featured Blogs',                     findBy: '.featured-press-section',       depth: 1, buildCode: '' },
+      { name: 'Press Logo Carousel',               findBy: '.press-carousel-component.redesign', depth: 1, buildCode: '' },
+      { name: 'Stats Grid',                        findBy: '.stats',                             depth: 1, buildCode: '' },
       { name: 'Agent Bio with Detail Bar',          findBy: '.agent-bio',                    depth: 1, buildCode: '' },
+      { name: 'Agent Bio',                          findBy: '.redesign:has(.agent-info)',     depth: 1, buildCode: '' },
+      { name: 'Agent Intro - Full Bleed',           findBy: '.redesign.agent-intro',          depth: 1, buildCode: '' },
+      { name: 'Team Grid',                          findBy: '.team-grid.redesign',            depth: 1, buildCode: '' },
       { name: 'Agents Slider with Office Filter',   findBy: '.lp-vertical-paddings:has(.slider.js-slider)', depth: 1, buildCode: '' },
       { name: 'Properties Grid',                    findBy: '.property-list-section',        depth: 1, buildCode: '' },
       { name: 'Property Intro with Title Below',    findBy: '.property-intro-2',             depth: 1, buildCode: '' },
       { name: 'Property Description with Social Share', findBy: '.property-description',     depth: 1, buildCode: '' },
       { name: 'Virtual Tour',                       findBy: '.virtual-tour',                 depth: 1, buildCode: '' },
       { name: 'Property Agent',                     findBy: '.property-agent-cta',           depth: 1, buildCode: '' },
-      { name: 'Features & Amenities',               findBy: '.features-amenities',           depth: 1, buildCode: '' },
+      { name: 'Features & Amenities with Title',               findBy: '.features-amenities',           depth: 1, buildCode: '' },
       { name: 'Schedule a Showing',                 findBy: '.schedule.section',             depth: 1, buildCode: '' },
       { name: 'Property Mortgage Calculator',       findBy: '.mg-calc',                      depth: 1, buildCode: '' },
       { name: 'Property Map',                       findBy: 'section > .wrapper > .map-container', depth: 2, buildCode: '' },
@@ -3330,7 +3672,10 @@ STRICT RULES — follow these without exception:
           <div class="emcss__el-selector-open">${item.selector} {</div>
           <div class="emcss__el-editor-wrap">
             <div class="emcss__el-lines">1</div>
-            <textarea class="emcss__el-editor" spellcheck="false" data-gramm="false" data-gramm_editor="false" data-enable-grammarly="false"></textarea>
+            <div class="emcss__el-inner">
+              <div class="emcss__el-highlight" aria-hidden="true"></div>
+              <textarea class="emcss__el-editor" spellcheck="false" data-gramm="false" data-gramm_editor="false" data-enable-grammarly="false"></textarea>
+            </div>
           </div>
           <div class="emcss__el-selector-close">}</div>
           <div class="emcss__el-foot">
@@ -3356,6 +3701,7 @@ STRICT RULES — follow these without exception:
       const body      = itemEl.querySelector('.emcss__el-body');
       const linesDiv  = itemEl.querySelector('.emcss__el-lines');
       const elEditor  = itemEl.querySelector('.emcss__el-editor');
+      const elHlDiv   = itemEl.querySelector('.emcss__el-highlight');
       const actionBtn = itemEl.querySelector('.emcss__el-action-btn');
       const copyBtn   = itemEl.querySelector('.emcss__el-copy-btn');
       const fmtBtn    = itemEl.querySelector('.emcss__el-fmt-btn');
@@ -3403,7 +3749,10 @@ STRICT RULES — follow these without exception:
       function syncLines() {
         const count = elEditor.value.split('\n').length;
         linesDiv.textContent = Array.from({ length: count }, (_, n) => n + 1).join('\n');
-        linesDiv.scrollTop = elEditor.scrollTop;
+        linesDiv.scrollTop    = elEditor.scrollTop;
+        elHlDiv.innerHTML     = highlightCSS(elEditor.value);
+        elHlDiv.scrollTop     = elEditor.scrollTop;
+        elHlDiv.scrollLeft    = elEditor.scrollLeft;
       }
       syncLines();
 
@@ -3505,7 +3854,11 @@ STRICT RULES — follow these without exception:
       elEditor.addEventListener('focus',  () => { acTarget = elEditor; });
       elEditor.addEventListener('blur',   acHide);
       elEditor.addEventListener('click',  acHide);
-      elEditor.addEventListener('scroll', () => { linesDiv.scrollTop = elEditor.scrollTop; });
+      elEditor.addEventListener('scroll', () => {
+        linesDiv.scrollTop  = elEditor.scrollTop;
+        elHlDiv.scrollTop   = elEditor.scrollTop;
+        elHlDiv.scrollLeft  = elEditor.scrollLeft;
+      });
       elEditor.addEventListener('input',  () => {
         elUndoStack.push(elEditor.value);
         elRedoStack.length = 0;

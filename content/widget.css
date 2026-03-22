@@ -175,13 +175,41 @@
   white-space: pre !important;
 }
 
-#__emcss_widget__ .emcss__editor {
+/* Inner wrapper — positions highlight layer behind textarea */
+#__emcss_widget__ .emcss__editor-inner {
+  position: relative !important;
   flex: 1 !important;
+  overflow: hidden !important;
+}
+
+/* Highlight overlay — pixel-matches the textarea */
+#__emcss_widget__ .emcss__highlight {
+  position: absolute !important;
+  inset: 0 !important;
+  pointer-events: none !important;
+  overflow: hidden !important;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace !important;
+  font-size: 12.5px !important;
+  line-height: 1.6 !important;
+  padding: 12px 14px !important;
+  tab-size: 2 !important;
+  white-space: pre !important;
+  word-wrap: normal !important;
+  color: #94a3b8 !important;
+  z-index: 0 !important;
+}
+
+#__emcss_widget__ .emcss__editor {
+  position: relative !important;
+  z-index: 1 !important;
+  flex: 1 !important;
+  width: 100% !important;
+  height: 100% !important;
   background: transparent !important;
   border: none !important;
   outline: none !important;
   resize: none !important;
-  color: #a8d8a8 !important;
+  color: transparent !important;
   font-family: 'JetBrains Mono', 'Fira Code', monospace !important;
   font-size: 12.5px !important;
   line-height: 1.6 !important;
@@ -430,6 +458,16 @@
 }
 
 /* ── Elements panel ─────────────────────────────────────────────────────── */
+/* CMS mode setup bar */
+#__emcss_widget__ .emcss__cms-bar {
+  display: flex !important;
+  gap: 6px !important;
+  padding: 6px 10px !important;
+  background: #0d0f14 !important;
+  border-bottom: 1px solid #2a2060 !important;
+  flex-shrink: 0 !important;
+}
+
 #__emcss_widget__ .emcss__el-controls {
   display: flex !important;
   flex-direction: column !important;
@@ -607,13 +645,41 @@
   white-space: pre !important;
 }
 
-#__emcss_widget__ .emcss__el-editor {
+/* Inner wrapper for element editors */
+#__emcss_widget__ .emcss__el-inner {
+  position: relative !important;
   flex: 1 !important;
+  overflow: hidden !important;
+}
+
+/* Highlight overlay — pixel-matches the el-editor */
+#__emcss_widget__ .emcss__el-highlight {
+  position: absolute !important;
+  inset: 0 !important;
+  pointer-events: none !important;
+  overflow: hidden !important;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace !important;
+  font-size: 12px !important;
+  line-height: 1.6 !important;
+  padding: 10px 12px !important;
+  tab-size: 2 !important;
+  white-space: pre !important;
+  word-wrap: normal !important;
+  color: #94a3b8 !important;
+  z-index: 0 !important;
+}
+
+#__emcss_widget__ .emcss__el-editor {
+  position: relative !important;
+  z-index: 1 !important;
+  flex: 1 !important;
+  width: 100% !important;
+  height: 100% !important;
   background: transparent !important;
   border: none !important;
   outline: none !important;
   resize: none !important;
-  color: #a8d8a8 !important;
+  color: transparent !important;
   font-family: 'JetBrains Mono', 'Fira Code', monospace !important;
   font-size: 12px !important;
   line-height: 1.6 !important;
@@ -738,7 +804,8 @@
     padding: 4px 10px !important;
   }
 
-  #__emcss_widget__ .emcss__editor {
+  #__emcss_widget__ .emcss__editor,
+  #__emcss_widget__ .emcss__highlight {
     font-size: 13px !important;
   }
 
@@ -776,7 +843,8 @@
     cursor: default !important;
   }
 
-  #__emcss_widget__ .emcss__editor {
+  #__emcss_widget__ .emcss__editor,
+  #__emcss_widget__ .emcss__highlight {
     font-size: 14px !important;
   }
 }
@@ -1348,3 +1416,18 @@
   border-top: none !important;
   border-top: 1px solid #1e2d3d !important;
 }
+
+/* ── Syntax highlighting token colors ──────────────────────────────────── */
+#__emcss_widget__ .hl-cm { color: #64748b !important; font-style: italic !important; } /* comment */
+#__emcss_widget__ .hl-st { color: #86efac !important; }  /* string */
+#__emcss_widget__ .hl-at { color: #c084fc !important; }  /* @rule */
+#__emcss_widget__ .hl-va { color: #a78bfa !important; }  /* $variable */
+#__emcss_widget__ .hl-hx { color: #fbbf24 !important; }  /* #hex color */
+#__emcss_widget__ .hl-nu { color: #fb923c !important; }  /* number + unit */
+#__emcss_widget__ .hl-pr { color: #67e8f9 !important; }  /* property */
+#__emcss_widget__ .hl-vl { color: #e2e8f0 !important; }  /* value keyword */
+#__emcss_widget__ .hl-sl { color: #4ade80 !important; }  /* selector (.class #id %) */
+#__emcss_widget__ .hl-ps { color: #a78bfa !important; }  /* :pseudo / ::pseudo */
+#__emcss_widget__ .hl-am { color: #f472b6 !important; }  /* & parent ref */
+#__emcss_widget__ .hl-pu { color: #475569 !important; }  /* punctuation { } ; , : */
+#__emcss_widget__ .hl-im { color: #f87171 !important; }  /* !important */
